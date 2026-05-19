@@ -449,44 +449,73 @@ export default function ClassroomManager() {
   }, [normalizedAssignmentHistory, summaryClass]);
 
   const exportAttendanceExcel = () => {
-    const dataToExport = globalClass === 'all' ? normalizedAttendanceHistory : filteredAttendanceHistory;
-    if (dataToExport.length === 0) return alert('ไม่มีข้อมูลสำหรับส่งออก');
+    const targetStudents = globalClass === 'all' ? normalizedStudents : activeClassStudents;
+    const historyData = globalClass === 'all' ? normalizedAttendanceHistory : filteredAttendanceHistory;
+
+    if (historyData.length === 0) return alert('ไม่มีข้อมูลสำหรับส่งออก');
     
-    const excelData = dataToExport.map(row => ({
-      'ชั้นเรียน': row.className,
-      'เลขที่': row.studentId,
-      'ชื่อ-สกุล': row.name,
-      'วิชา': row.subject,
-      'วันที่': row.date,
-      'สถานะ': row.status === 'present' ? 'มาเรียน' : row.status === 'absent' ? 'ขาดเรียน' : 'มาสาย'
-    }));
+    const excelData = targetStudents.map(student => {
+      const studentHistory = historyData.filter(h => h.name === student.name);
+      const present = studentHistory.filter(h => h.status === 'present').length;
+      const absent = studentHistory.filter(h => h.status === 'absent').length;
+      const late = studentHistory.filter(h => h.status === 'late').length;
+      
+      return {
+        'ชั้นเรียน': student.className,
+        'เลขที่': student.studentId,
+        'ชื่อ-สกุล': student.name,
+        'มาเรียน (ครั้ง)': present,
+        'ขาดเรียน (ครั้ง)': absent,
+        'มาสาย (ครั้ง)': late,
+        'รวมเช็คชื่อทั้งหมด (ครั้ง)': present + absent + late
+      };
+    });
+    
+    excelData.sort((a, b) => {
+      if (a['ชั้นเรียน'] !== b['ชั้นเรียน']) return String(a['ชั้นเรียน']).localeCompare(String(b['ชั้นเรียน']));
+      return (parseInt(a['เลขที่']) || 0) - (parseInt(b['เลขที่']) || 0);
+    });
     
     const ws = XLSX.utils.json_to_sheet(excelData);
-    ws['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 15 }];
+    ws['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Attendance");
-    XLSX.writeFile(wb, `รายงานการเข้าเรียน_${globalClass === 'all' ? 'รวม' : `ห้อง_${globalClass}`}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
+    XLSX.writeFile(wb, `สรุปการเข้าเรียน_${globalClass === 'all' ? 'รวม' : `ห้อง_${globalClass}`}.xlsx`);
   };
 
   const exportAssignmentExcel = () => {
-    const dataToExport = globalClass === 'all' ? normalizedAssignmentHistory : filteredAssignmentHistory;
-    if (dataToExport.length === 0) return alert('ไม่มีข้อมูลสำหรับส่งออก');
+    const targetStudents = globalClass === 'all' ? normalizedStudents : activeClassStudents;
+    const historyData = globalClass === 'all' ? normalizedAssignmentHistory : filteredAssignmentHistory;
+
+    if (historyData.length === 0) return alert('ไม่มีข้อมูลสำหรับส่งออก');
     
-    const excelData = dataToExport.map(row => ({
-      'ชั้นเรียน': row.className,
-      'เลขที่': row.studentId,
-      'ชื่อ-สกุล': row.name,
-      'วิชา': row.subject,
-      'ชื่องาน': row.assignment,
-      'กำหนดส่ง': row.dueDate,
-      'สถานะ': row.status === 'completed' ? 'ส่งแล้ว' : row.status === 'overdue' ? 'เลยกำหนด' : 'กำลังทำ'
-    }));
+    const excelData = targetStudents.map(student => {
+      const studentHistory = historyData.filter(h => h.name === student.name);
+      const completed = studentHistory.filter(h => h.status === 'completed').length;
+      const pending = studentHistory.filter(h => h.status === 'pending').length;
+      const overdue = studentHistory.filter(h => h.status === 'overdue').length;
+      
+      return {
+        'ชั้นเรียน': student.className,
+        'เลขที่': student.studentId,
+        'ชื่อ-สกุล': student.name,
+        'ส่งแล้ว (ชิ้น)': completed,
+        'กำลังทำ (ชิ้น)': pending,
+        'เลยกำหนด (ชิ้น)': overdue,
+        'รวมงานทั้งหมด (ชิ้น)': completed + pending + overdue
+      };
+    });
     
+    excelData.sort((a, b) => {
+      if (a['ชั้นเรียน'] !== b['ชั้นเรียน']) return String(a['ชั้นเรียน']).localeCompare(String(b['ชั้นเรียน']));
+      return (parseInt(a['เลขที่']) || 0) - (parseInt(b['เลขที่']) || 0);
+    });
+
     const ws = XLSX.utils.json_to_sheet(excelData);
-    ws['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 25 }, { wch: 20 }, { wch: 30 }, { wch: 15 }, { wch: 15 }];
+    ws['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Assignments");
-    XLSX.writeFile(wb, `รายงานการส่งงาน_${globalClass === 'all' ? 'รวม' : `ห้อง_${globalClass}`}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Assignment Summary");
+    XLSX.writeFile(wb, `สรุปการส่งงาน_${globalClass === 'all' ? 'รวม' : `ห้อง_${globalClass}`}.xlsx`);
   };
 
   // ---------------- INDIVIDUAL SUMMARY CALC ----------------
