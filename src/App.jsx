@@ -424,6 +424,71 @@ export default function ClassroomManager() {
     ];
   };
 
+  const summaryAttStats = useMemo(() => {
+    const data = summaryClass ? normalizedAttendanceHistory.filter(h => h.className === summaryClass) : normalizedAttendanceHistory;
+    const present = data.filter(d => d.status === 'present').length;
+    const absent = data.filter(d => d.status === 'absent').length;
+    const late = data.filter(d => d.status === 'late').length;
+    return [
+      { name: 'มาเรียน', value: present, fill: '#10b981' },
+      { name: 'ขาดเรียน', value: absent, fill: '#ef4444' },
+      { name: 'มาสาย', value: late, fill: '#f59e0b' }
+    ].filter(s => s.value > 0);
+  }, [normalizedAttendanceHistory, summaryClass]);
+
+  const summaryAssignStats = useMemo(() => {
+    const data = summaryClass ? normalizedAssignmentHistory.filter(h => h.className === summaryClass) : normalizedAssignmentHistory;
+    const completed = data.filter(d => d.status === 'completed').length;
+    const pending = data.filter(d => d.status === 'pending').length;
+    const overdue = data.filter(d => d.status === 'overdue').length;
+    return [
+      { name: 'ส่งแล้ว', value: completed, fill: '#10b981' },
+      { name: 'กำลังทำ', value: pending, fill: '#3b82f6' },
+      { name: 'เลยกำหนด', value: overdue, fill: '#ef4444' }
+    ].filter(s => s.value > 0);
+  }, [normalizedAssignmentHistory, summaryClass]);
+
+  const exportAttendanceExcel = () => {
+    const dataToExport = globalClass === 'all' ? normalizedAttendanceHistory : filteredAttendanceHistory;
+    if (dataToExport.length === 0) return alert('ไม่มีข้อมูลสำหรับส่งออก');
+    
+    const excelData = dataToExport.map(row => ({
+      'ชั้นเรียน': row.className,
+      'เลขที่': row.studentId,
+      'ชื่อ-สกุล': row.name,
+      'วิชา': row.subject,
+      'วันที่': row.date,
+      'สถานะ': row.status === 'present' ? 'มาเรียน' : row.status === 'absent' ? 'ขาดเรียน' : 'มาสาย'
+    }));
+    
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    ws['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 15 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+    XLSX.writeFile(wb, `รายงานการเข้าเรียน_${globalClass === 'all' ? 'รวม' : `ห้อง_${globalClass}`}.xlsx`);
+  };
+
+  const exportAssignmentExcel = () => {
+    const dataToExport = globalClass === 'all' ? normalizedAssignmentHistory : filteredAssignmentHistory;
+    if (dataToExport.length === 0) return alert('ไม่มีข้อมูลสำหรับส่งออก');
+    
+    const excelData = dataToExport.map(row => ({
+      'ชั้นเรียน': row.className,
+      'เลขที่': row.studentId,
+      'ชื่อ-สกุล': row.name,
+      'วิชา': row.subject,
+      'ชื่องาน': row.assignment,
+      'กำหนดส่ง': row.dueDate,
+      'สถานะ': row.status === 'completed' ? 'ส่งแล้ว' : row.status === 'overdue' ? 'เลยกำหนด' : 'กำลังทำ'
+    }));
+    
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    ws['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 25 }, { wch: 20 }, { wch: 30 }, { wch: 15 }, { wch: 15 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Assignments");
+    XLSX.writeFile(wb, `รายงานการส่งงาน_${globalClass === 'all' ? 'รวม' : `ห้อง_${globalClass}`}.xlsx`);
+  };
+
   // ---------------- INDIVIDUAL SUMMARY CALC ----------------
   const studentAttHistory = useMemo(() => {
     if (!summaryStudent) return [];
