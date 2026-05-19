@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { CheckCircle, AlertCircle, BookOpen, Users, Calendar, Settings, ArrowRight, LayoutDashboard, ChevronRight, Clock, MapPin, Sparkles, Filter, Save, Edit3, Search, Lock, User, LogOut, Award } from 'lucide-react';
+import { CheckCircle, AlertCircle, BookOpen, Users, Calendar, Settings, ArrowRight, LayoutDashboard, ChevronRight, Clock, MapPin, Sparkles, Filter, Save, Edit3, Search, Lock, User, LogOut, Award, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const normalizeRow = (row) => {
   return {
@@ -666,9 +667,14 @@ export default function ClassroomManager() {
                           <div>
                             <h2 className="text-xl font-bold text-slate-800">เช็คชื่อห้อง {globalClass}</h2>
                           </div>
-                          <button onClick={handleSaveBulkAttendance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl hover:bg-indigo-700 font-medium flex items-center gap-2">
-                            <Save size={18} /> บันทึก
-                          </button>
+                          <div className="flex gap-3">
+                            <button onClick={exportAttendanceExcel} className="bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl hover:bg-emerald-100 font-bold text-sm shadow-sm border border-emerald-100 flex items-center gap-2 transition-all">
+                              <Download size={18} /> ส่งออก Excel
+                            </button>
+                            <button onClick={handleSaveBulkAttendance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl hover:bg-indigo-700 font-medium flex items-center gap-2">
+                              <Save size={18} /> บันทึก
+                            </button>
+                          </div>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-left border-collapse">
@@ -768,9 +774,14 @@ export default function ClassroomManager() {
                       <div className="glass-card rounded-[2rem] overflow-hidden shadow-lg shadow-slate-200/50">
                         <div className="p-6 md:p-8 border-b border-slate-100/50 bg-white/40 flex justify-between items-center">
                           <h2 className="text-xl font-bold text-slate-800">เช็คส่งงานห้อง {globalClass}</h2>
-                          <button onClick={handleSaveBulkAssignment} className="bg-purple-600 text-white px-6 py-2.5 rounded-xl hover:bg-purple-700 font-medium flex items-center gap-2">
-                            <Save size={18} /> บันทึก
-                          </button>
+                          <div className="flex gap-3">
+                            <button onClick={exportAssignmentExcel} className="bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl hover:bg-emerald-100 font-bold text-sm shadow-sm border border-emerald-100 flex items-center gap-2 transition-all">
+                              <Download size={18} /> ส่งออก Excel
+                            </button>
+                            <button onClick={handleSaveBulkAssignment} className="bg-purple-600 text-white px-6 py-2.5 rounded-xl hover:bg-purple-700 font-medium flex items-center gap-2">
+                              <Save size={18} /> บันทึก
+                            </button>
+                          </div>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-left border-collapse">
@@ -837,10 +848,50 @@ export default function ClassroomManager() {
                 </div>
 
                 {!summaryStudent ? (
-                  <div className="glass-card rounded-[2rem] p-16 text-center border-dashed border-2 border-slate-300/50 bg-white/30">
-                    <Search size={64} className="mx-auto text-emerald-200 mb-6" />
-                    <h3 className="text-2xl font-bold text-slate-700 mb-2">ค้นหาข้อมูลนักเรียน</h3>
-                    <p className="text-slate-500">กรุณาเลือกชั้นเรียนและชื่อนักเรียนด้านบน เพื่อดูสรุปผลการเข้าเรียนและการส่งงาน</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in-up">
+                    <div className="glass-card rounded-[2rem] p-8 text-center bg-white/40 flex flex-col items-center shadow-sm">
+                      <div className="p-3 bg-emerald-100 text-emerald-600 rounded-2xl mb-4"><Calendar size={28} /></div>
+                      <h3 className="text-xl font-extrabold text-slate-700 mb-2">สถิติการเข้าเรียน</h3>
+                      <p className="text-slate-500 text-sm mb-6">{summaryClass ? `เฉพาะนักเรียนห้อง ${summaryClass}` : 'นักเรียนทั้งหมดทุกระดับชั้น'}</p>
+                      
+                      {summaryAttStats.length > 0 ? (
+                        <div className="h-64 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie data={summaryAttStats} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
+                                {summaryAttStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                              </Pie>
+                              <Tooltip formatter={(value) => [`${value} ครั้ง`, 'จำนวน']} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                              <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div className="h-64 flex items-center justify-center text-slate-400 bg-slate-50 w-full rounded-2xl border border-dashed">ไม่มีข้อมูลการเข้าเรียน</div>
+                      )}
+                    </div>
+                    
+                    <div className="glass-card rounded-[2rem] p-8 text-center bg-white/40 flex flex-col items-center shadow-sm">
+                      <div className="p-3 bg-blue-100 text-blue-600 rounded-2xl mb-4"><BookOpen size={28} /></div>
+                      <h3 className="text-xl font-extrabold text-slate-700 mb-2">สถิติการส่งงาน</h3>
+                      <p className="text-slate-500 text-sm mb-6">{summaryClass ? `เฉพาะนักเรียนห้อง ${summaryClass}` : 'นักเรียนทั้งหมดทุกระดับชั้น'}</p>
+                      
+                      {summaryAssignStats.length > 0 ? (
+                        <div className="h-64 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie data={summaryAssignStats} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
+                                {summaryAssignStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                              </Pie>
+                              <Tooltip formatter={(value) => [`${value} ชิ้น`, 'จำนวน']} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                              <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div className="h-64 flex items-center justify-center text-slate-400 bg-slate-50 w-full rounded-2xl border border-dashed">ไม่มีข้อมูลการส่งงาน</div>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-6 animate-fade-in-up">
