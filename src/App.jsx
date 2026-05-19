@@ -238,10 +238,80 @@ export default function ClassroomManager() {
     return normalizedAssignmentHistory.filter(r => r.className === globalClass);
   }, [normalizedAssignmentHistory, globalClass]);
 
+  // Options for past attendance
+  const pastAttendanceOptions = useMemo(() => {
+    const options = [];
+    const seen = new Set();
+    filteredAttendanceHistory.forEach(record => {
+      const key = `${record.date}|${record.subject}`;
+      if (!seen.has(key) && record.date !== '-' && record.subject !== '-') {
+        seen.add(key);
+        options.push({ date: record.date, subject: record.subject });
+      }
+    });
+    return options.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [filteredAttendanceHistory]);
+
+  // Options for past assignments
+  const pastAssignmentOptions = useMemo(() => {
+    const options = [];
+    const seen = new Set();
+    filteredAssignmentHistory.forEach(record => {
+      const key = `${record.assignment}|${record.subject}|${record.dueDate}`;
+      if (!seen.has(key) && record.assignment !== '-' && record.subject !== '-') {
+        seen.add(key);
+        options.push({ assignment: record.assignment, subject: record.subject, dueDate: record.dueDate });
+      }
+    });
+    return options.sort((a, b) => new Date(b.dueDate) - new Date(a.dueDate));
+  }, [filteredAssignmentHistory]);
+
 
   // ---------------- HANDLERS ----------------
   const handleStatusChange = (name, status) => setAttendanceList(prev => ({ ...prev, [name]: status }));
   const handleAssignStatusChange = (name, status) => setAssignStatusList(prev => ({ ...prev, [name]: status }));
+
+  const handleLoadPastAttendance = (val) => {
+    if (!val) {
+      setSelectedDate(new Date().toISOString().split('T')[0]);
+      setFormData({ subject: '' });
+      const initialAtt = {};
+      activeClassStudents.forEach(s => initialAtt[s.name] = 'present');
+      setAttendanceList(initialAtt);
+      return;
+    }
+    const [date, subject] = val.split('|');
+    setSelectedDate(date);
+    setFormData({ subject });
+    
+    const pastRecords = filteredAttendanceHistory.filter(r => r.date === date && r.subject === subject);
+    const newAttList = {};
+    activeClassStudents.forEach(s => {
+      const record = pastRecords.find(r => r.name === s.name);
+      newAttList[s.name] = record ? record.status : 'present';
+    });
+    setAttendanceList(newAttList);
+  };
+
+  const handleLoadPastAssignment = (val) => {
+    if (!val) {
+      setAssignForm({ subject: '', name: '', dueDate: new Date().toISOString().split('T')[0] });
+      const initialAssign = {};
+      activeClassStudents.forEach(s => initialAssign[s.name] = 'pending');
+      setAssignStatusList(initialAssign);
+      return;
+    }
+    const [assignment, subject, dueDate] = val.split('|');
+    setAssignForm({ name: assignment, subject, dueDate });
+    
+    const pastRecords = filteredAssignmentHistory.filter(r => r.assignment === assignment && r.subject === subject && r.dueDate === dueDate);
+    const newAssignList = {};
+    activeClassStudents.forEach(s => {
+      const record = pastRecords.find(r => r.name === s.name);
+      newAssignList[s.name] = record ? record.status : 'pending';
+    });
+    setAssignStatusList(newAssignList);
+  };
 
   const handleSaveBulkAttendance = async (e) => {
     e.preventDefault();
@@ -263,7 +333,13 @@ export default function ClassroomManager() {
       const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'attendance', sheetId: extractSheetId(sheetUrl), data: payloadData })
+        body: JSON.stringify({ 
+          action: 'attendance', 
+          sheetId: extractSheetId(sheetUrl), 
+          data: payloadData,
+          mode: 'overwrite',
+          className: globalClass // Pass class name to help gas filter and overwrite
+        })
       });
       
       const result = await response.json();
@@ -301,7 +377,13 @@ export default function ClassroomManager() {
       const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'assignment', sheetId: extractSheetId(sheetUrl), data: payloadData })
+        body: JSON.stringify({ 
+          action: 'assignment', 
+          sheetId: extractSheetId(sheetUrl), 
+          data: payloadData,
+          mode: 'overwrite',
+          className: globalClass
+        })
       });
       
       const result = await response.json();
@@ -546,20 +628,36 @@ export default function ClassroomManager() {
                   </div>
                 ) : (
                   <>
-                    <div className="glass-card rounded-[2rem] p-6 flex flex-col md:flex-row gap-4 items-end shadow-sm">
-                      <div className="flex-1 w-full">
-                        <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Calendar size={14}/> วันที่เช็คชื่อ</label>
-                        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="w-full px-4 py-3 bg-white/60 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium text-slate-700" />
-                      </div>
-                      {subjectList.length > 0 ? (
-                        <div className="flex-1 w-full">
-                          <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-1"><BookOpen size={14}/> วิชา</label>
-                          <select value={formData.subject} onChange={(e) => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-3 bg-white/60 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-medium text-slate-700">
-                            <option value="" disabled>เลือกวิชา...</option>
-                            {subjectList.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                    <div className="glass-card rounded-[2rem] p-6 flex flex-col gap-4 shadow-sm">
+                      {pastAttendanceOptions.length > 0 && (
+                        <div className="w-full pb-4 border-b border-slate-100">
+                          <label className="block text-xs font-semibold text-indigo-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Edit3 size={14}/> เลือกข้อมูลเดิมเพื่อแก้ไข</label>
+                          <select onChange={(e) => handleLoadPastAttendance(e.target.value)} className="w-full px-4 py-3 bg-indigo-50/50 border border-indigo-100 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-medium text-indigo-700 cursor-pointer transition-colors hover:bg-indigo-50">
+                            <option value="">-- สร้างการเช็คชื่อใหม่ --</option>
+                            {pastAttendanceOptions.map((opt, i) => (
+                              <option key={i} value={`${opt.date}|${opt.subject}`}>
+                                วันที่ {opt.date} - วิชา {opt.subject}
+                              </option>
+                            ))}
                           </select>
                         </div>
-                      ) : (<div className="flex-1 w-full text-sm text-slate-500 bg-white/40 p-3 rounded-xl border border-dashed text-center">ไม่มีข้อมูลวิชา</div>)}
+                      )}
+                      
+                      <div className="flex flex-col md:flex-row gap-4 items-end w-full">
+                        <div className="flex-1 w-full">
+                          <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Calendar size={14}/> วันที่เช็คชื่อ</label>
+                          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="w-full px-4 py-3 bg-white/60 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium text-slate-700" />
+                        </div>
+                        {subjectList.length > 0 ? (
+                          <div className="flex-1 w-full">
+                            <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-1"><BookOpen size={14}/> วิชา</label>
+                            <select value={formData.subject} onChange={(e) => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-3 bg-white/60 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-medium text-slate-700">
+                              <option value="" disabled>เลือกวิชา...</option>
+                              {subjectList.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                            </select>
+                          </div>
+                        ) : (<div className="flex-1 w-full text-sm text-slate-500 bg-white/40 p-3 rounded-xl border border-dashed text-center">ไม่มีข้อมูลวิชา</div>)}
+                      </div>
                     </div>
 
                     {activeClassStudents.length > 0 && (
@@ -632,21 +730,37 @@ export default function ClassroomManager() {
                   </div>
                 ) : (
                   <>
-                    <div className="glass-card rounded-[2rem] p-6 grid grid-cols-1 md:grid-cols-3 gap-4 shadow-sm">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 mb-2">ชื่องาน</label>
-                        <input type="text" value={assignForm.name} onChange={(e) => setAssignForm({...assignForm, name: e.target.value})} className="w-full px-4 py-3 bg-white/60 border rounded-xl" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 mb-2">กำหนดส่ง</label>
-                        <input type="date" value={assignForm.dueDate} onChange={(e) => setAssignForm({...assignForm, dueDate: e.target.value})} className="w-full px-4 py-3 bg-white/60 border rounded-xl" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 mb-2">วิชา</label>
-                        <select value={assignForm.subject} onChange={(e) => setAssignForm({...assignForm, subject: e.target.value})} className="w-full px-4 py-3 bg-white/60 border rounded-xl">
-                          <option value="" disabled>เลือกวิชา...</option>
-                          {subjectList.map(sub => <option key={sub} value={sub}>{sub}</option>)}
-                        </select>
+                    <div className="glass-card rounded-[2rem] p-6 flex flex-col gap-4 shadow-sm">
+                      {pastAssignmentOptions.length > 0 && (
+                        <div className="w-full pb-4 border-b border-slate-100">
+                          <label className="block text-xs font-semibold text-purple-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Edit3 size={14}/> เลือกงานเดิมเพื่อแก้ไข</label>
+                          <select onChange={(e) => handleLoadPastAssignment(e.target.value)} className="w-full px-4 py-3 bg-purple-50/50 border border-purple-100 rounded-xl focus:ring-2 focus:ring-purple-500/20 outline-none text-sm font-medium text-purple-700 cursor-pointer transition-colors hover:bg-purple-50">
+                            <option value="">-- สร้างงานใหม่ --</option>
+                            {pastAssignmentOptions.map((opt, i) => (
+                              <option key={i} value={`${opt.assignment}|${opt.subject}|${opt.dueDate}`}>
+                                งาน: {opt.assignment} (วิชา: {opt.subject}) - กำหนดส่ง {opt.dueDate}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-2">ชื่องาน</label>
+                          <input type="text" value={assignForm.name} onChange={(e) => setAssignForm({...assignForm, name: e.target.value})} className="w-full px-4 py-3 bg-white/60 border rounded-xl" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-2">กำหนดส่ง</label>
+                          <input type="date" value={assignForm.dueDate} onChange={(e) => setAssignForm({...assignForm, dueDate: e.target.value})} className="w-full px-4 py-3 bg-white/60 border rounded-xl" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-2">วิชา</label>
+                          <select value={assignForm.subject} onChange={(e) => setAssignForm({...assignForm, subject: e.target.value})} className="w-full px-4 py-3 bg-white/60 border rounded-xl">
+                            <option value="" disabled>เลือกวิชา...</option>
+                            {subjectList.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                          </select>
+                        </div>
                       </div>
                     </div>
 
