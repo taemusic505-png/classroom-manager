@@ -320,7 +320,15 @@ export default function ClassroomManager() {
     if (!formData.subject) return alert('กรุณาเลือกวิชาก่อนบันทึก');
     
     const scriptUrl = import.meta.env.VITE_GOOGLE_APP_SCRIPT_URL;
-    if (!scriptUrl) return alert('⚠️ กรุณาตั้งค่า VITE_GOOGLE_APP_SCRIPT_URL ในไฟล์ .env.local');
+    if (!scriptUrl) {
+      console.error('Missing VITE_GOOGLE_APP_SCRIPT_URL');
+      return alert('⚠️ ไม่พบ URL สำหรับบันทึกข้อมูล (VITE_GOOGLE_APP_SCRIPT_URL) กรุณาตรวจสอบการตั้งค่าใน Vercel');
+    }
+
+    const sheetId = extractSheetId(sheetUrl);
+    if (!sheetId) {
+      return alert('❌ URL ของ Google Sheets ไม่ถูกต้อง ไม่สามารถดึง Sheet ID ได้');
+    }
 
     setIsSaving(true);
     try {
@@ -331,27 +339,38 @@ export default function ClassroomManager() {
         Status: attendanceList[student.name] || 'present'
       }));
 
+      console.log('Sending attendance data...', { action: 'attendance', sheetId, className: globalClass });
+
       const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ 
           action: 'attendance', 
-          sheetId: extractSheetId(sheetUrl), 
+          sheetId: sheetId, 
           data: payloadData,
           mode: 'overwrite',
-          className: globalClass // Pass class name to help gas filter and overwrite
+          className: globalClass
         })
       });
       
-      const result = await response.json();
+      const text = await response.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (parseError) {
+        console.error('Failed to parse response:', text);
+        throw new Error('Google Script ตอบกลับมาไม่ใช่ JSON: ' + text.substring(0, 100));
+      }
+
       if (result.status === 'success') {
-        alert('✅ ส่งข้อมูลการเข้าเรียนไปยัง Google Sheets แล้ว!');
-        setTimeout(() => loadAllData(extractSheetId(sheetUrl)), 1500);
+        alert('✅ บันทึกข้อมูลการเข้าเรียนเรียบร้อยแล้ว!');
+        setTimeout(() => loadAllData(sheetId), 1500);
       } else {
-        throw new Error(result.message);
+        throw new Error(result.message || 'เกิดข้อผิดพลาดฝั่ง Google Script');
       }
     } catch (error) {
-      alert('❌ เกิดข้อผิดพลาด: ' + error.message);
+      console.error('Save Error:', error);
+      alert('❌ บันทึกไม่สำเร็จ: ' + error.message);
     } finally {
       setIsSaving(false);
     }
@@ -363,7 +382,15 @@ export default function ClassroomManager() {
     if (!assignForm.subject || !assignForm.name) return alert('กรุณาเลือกวิชาและตั้งชื่องานก่อนบันทึก');
 
     const scriptUrl = import.meta.env.VITE_GOOGLE_APP_SCRIPT_URL;
-    if (!scriptUrl) return alert('⚠️ กรุณาตั้งค่า VITE_GOOGLE_APP_SCRIPT_URL ในไฟล์ .env.local');
+    if (!scriptUrl) {
+      console.error('Missing VITE_GOOGLE_APP_SCRIPT_URL');
+      return alert('⚠️ ไม่พบ URL สำหรับบันทึกข้อมูล (VITE_GOOGLE_APP_SCRIPT_URL) กรุณาตรวจสอบการตั้งค่าใน Vercel');
+    }
+
+    const sheetId = extractSheetId(sheetUrl);
+    if (!sheetId) {
+      return alert('❌ URL ของ Google Sheets ไม่ถูกต้อง ไม่สามารถดึง Sheet ID ได้');
+    }
 
     setIsSaving(true);
     try {
@@ -375,27 +402,38 @@ export default function ClassroomManager() {
         Status: assignStatusList[student.name] || 'pending'
       }));
 
+      console.log('Sending assignment data...', { action: 'assignment', sheetId, className: globalClass });
+
       const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ 
           action: 'assignment', 
-          sheetId: extractSheetId(sheetUrl), 
+          sheetId: sheetId, 
           data: payloadData,
           mode: 'overwrite',
           className: globalClass
         })
       });
       
-      const result = await response.json();
+      const text = await response.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (parseError) {
+        console.error('Failed to parse response:', text);
+        throw new Error('Google Script ตอบกลับมาไม่ใช่ JSON: ' + text.substring(0, 100));
+      }
+
       if (result.status === 'success') {
-        alert('✅ ส่งข้อมูลการส่งงานไปยัง Google Sheets แล้ว!');
-        setTimeout(() => loadAllData(extractSheetId(sheetUrl)), 1500);
+        alert('✅ บันทึกข้อมูลการส่งงานเรียบร้อยแล้ว!');
+        setTimeout(() => loadAllData(sheetId), 1500);
       } else {
-        throw new Error(result.message);
+        throw new Error(result.message || 'เกิดข้อผิดพลาดฝั่ง Google Script');
       }
     } catch (error) {
-      alert('❌ เกิดข้อผิดพลาด: ' + error.message);
+      console.error('Save Error:', error);
+      alert('❌ บันทึกไม่สำเร็จ: ' + error.message);
     } finally {
       setIsSaving(false);
     }
