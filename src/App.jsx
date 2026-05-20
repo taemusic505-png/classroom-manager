@@ -341,12 +341,12 @@ export default function ClassroomManager() {
         Status: attendanceList[student.name] || 'present'
       }));
 
-      // Debug log (จะเห็นใน Console F12)
-      console.log('Attempting to save to:', scriptUrl.substring(0, 45) + '...');
+      // Debug log
+      console.log('Attempting to save to (no-cors mode):', scriptUrl.substring(0, 45) + '...');
 
-      const response = await fetch(scriptUrl, {
+      await fetch(scriptUrl, {
         method: 'POST',
-        mode: 'cors', // เพิ่มการกำหนด mode ให้ชัดเจน
+        mode: 'no-cors', // ข้ามปัญหา CORS โดยการไม่รออ่าน response
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ 
           action: 'attendance', 
@@ -357,23 +357,9 @@ export default function ClassroomManager() {
         })
       });
       
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-      const text = await response.text();
-      let result;
-      try {
-        result = JSON.parse(text);
-      } catch (parseError) {
-        console.error('Failed to parse response:', text);
-        throw new Error('Google Script ตอบกลับมาไม่ใช่ JSON: ' + text.substring(0, 100));
-      }
-
-      if (result.status === 'success') {
-        alert('✅ บันทึกข้อมูลการเข้าเรียนเรียบร้อยแล้ว!');
-        setTimeout(() => loadAllData(sheetId), 1500);
-      } else {
-        throw new Error(result.message || 'เกิดข้อผิดพลาดฝั่ง Google Script');
-      }
+      // เนื่องจากโหมด no-cors จะไม่คืนค่า success/error เราจึงต้องถือว่าส่งสำเร็จ
+      alert('✅ ส่งข้อมูลการเข้าเรียนเรียบร้อยแล้ว!\n(โปรดตรวจสอบความถูกต้องใน Google Sheets อีกครั้ง)');
+      setTimeout(() => loadAllData(sheetId), 1500);
     } catch (error) {
       console.error('Save Error:', error);
       alert('❌ บันทึกไม่สำเร็จ: ' + error.message);
@@ -411,11 +397,11 @@ export default function ClassroomManager() {
       }));
 
       // Debug log
-      console.log('Attempting to save assignment to:', scriptUrl.substring(0, 45) + '...');
+      console.log('Attempting to save assignment to (no-cors mode):', scriptUrl.substring(0, 45) + '...');
 
-      const response = await fetch(scriptUrl, {
+      await fetch(scriptUrl, {
         method: 'POST',
-        mode: 'cors',
+        mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ 
           action: 'assignment', 
@@ -426,23 +412,8 @@ export default function ClassroomManager() {
         })
       });
       
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-      const text = await response.text();
-      let result;
-      try {
-        result = JSON.parse(text);
-      } catch (parseError) {
-        console.error('Failed to parse response:', text);
-        throw new Error('Google Script ตอบกลับมาไม่ใช่ JSON: ' + text.substring(0, 100));
-      }
-
-      if (result.status === 'success') {
-        alert('✅ บันทึกข้อมูลการส่งงานเรียบร้อยแล้ว!');
-        setTimeout(() => loadAllData(sheetId), 1500);
-      } else {
-        throw new Error(result.message || 'เกิดข้อผิดพลาดฝั่ง Google Script');
-      }
+      alert('✅ ส่งข้อมูลการส่งงานเรียบร้อยแล้ว!\n(โปรดตรวจสอบความถูกต้องใน Google Sheets อีกครั้ง)');
+      setTimeout(() => loadAllData(sheetId), 1500);
     } catch (error) {
       console.error('Save Error:', error);
       alert('❌ บันทึกไม่สำเร็จ: ' + error.message);
