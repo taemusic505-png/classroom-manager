@@ -4,15 +4,22 @@ import { CheckCircle, AlertCircle, BookOpen, Users, Calendar, Settings, ArrowRig
 import * as XLSX from 'xlsx';
 
 const normalizeRow = (row) => {
+  const getVal = (keys) => {
+    for (const key of keys) {
+      if (row[key] && String(row[key]).trim()) return String(row[key]).trim();
+    }
+    return '';
+  };
+
   return {
-    name: row.Name || row['ชื่อนักเรียน'] || row['ชื่อ'] || row['ชื่อ-สกุล'] || row['ชื่อ-นามสกุล'] || row['ชื่อ - สกุล'] || '-',
-    subject: row.Subject || row['วิชา'] || row['รายวิชา'] || '-',
-    date: row.Date || row['วันที่'] || row['วันที่เช็คชื่อ'] || '-',
-    status: row.Status || row['สถานะ'] || '-',
-    assignment: row.Assignment || row['ชื่องาน'] || row['งาน'] || '-',
-    dueDate: row.DueDate || row['กำหนดส่ง'] || row['วันส่ง'] || '-',
-    studentId: row.StudentID || row['เลขที่'] || row['รหัส'] || row['รหัสนักเรียน'] || '-',
-    className: row.Class || row['ชั้นเรียน'] || row['ชั้น'] || row['ห้อง'] || '-'
+    name: getVal(['Name', 'ชื่อนักเรียน', 'ชื่อ', 'ชื่อ-สกุล', 'ชื่อ-นามสกุล', 'ชื่อ - สกุล']),
+    subject: getVal(['Subject', 'วิชา', 'รายวิชา']) || '-',
+    date: getVal(['Date', 'วันที่', 'วันที่เช็คชื่อ']) || '-',
+    status: getVal(['Status', 'สถานะ']) || '-',
+    assignment: getVal(['Assignment', 'ชื่องาน', 'งาน']) || '-',
+    dueDate: getVal(['DueDate', 'กำหนดส่ง', 'วันส่ง']) || '-',
+    studentId: getVal(['StudentID', 'เลขที่', 'รหัส', 'รหัสนักเรียน']) || '-',
+    className: getVal(['Class', 'ชั้นเรียน', 'ชั้น', 'ห้อง']) || '-'
   };
 };
 
@@ -181,7 +188,7 @@ export default function ClassroomManager() {
   const normalizedStudents = useMemo(() => {
     return studentsData
       .map(normalizeRow)
-      .filter(s => s.name && s.name !== '-' && s.name.trim() !== '');
+      .filter(s => s.name && s.name.length > 1); // กรองเฉพาะคนที่มีชื่อจริงเท่านั้น
   }, [studentsData]);
   
   const classList = useMemo(() => {
@@ -339,7 +346,7 @@ export default function ClassroomManager() {
     setIsSaving(true);
     try {
       const payloadData = activeClassStudents
-        .filter(student => student.name && student.name !== '-' && student.name.trim() !== '')
+        .filter(student => student.name && student.name.length > 1)
         .map(student => ({
           Name: student.name,
           Subject: formData.subject,
@@ -352,7 +359,14 @@ export default function ClassroomManager() {
         return alert('❌ ไม่พบรายชื่อนักเรียนที่มีข้อมูลถูกต้องสำหรับบันทึก');
       }
 
-      // Debug log
+      // แสดงการยืนยันจำนวนคน
+      if (!window.confirm(`ยืนยันการบันทึกเช็คชื่อนักเรียนจำนวน ${payloadData.length} คน ใช่หรือไม่?`)) {
+        setIsSaving(false);
+        return;
+      }
+
+      console.log('--- ข้อมูลที่กำลังจะบันทึก ---');
+      console.table(payloadData);
       console.log('Attempting to save to (no-cors mode):', scriptUrl.substring(0, 45) + '...');
 
       await fetch(scriptUrl, {
@@ -400,7 +414,7 @@ export default function ClassroomManager() {
     setIsSaving(true);
     try {
       const payloadData = activeClassStudents
-        .filter(student => student.name && student.name !== '-' && student.name.trim() !== '')
+        .filter(student => student.name && student.name.length > 1)
         .map(student => ({
           Name: student.name,
           Subject: assignForm.subject,
@@ -414,7 +428,14 @@ export default function ClassroomManager() {
         return alert('❌ ไม่พบรายชื่อนักเรียนที่มีข้อมูลถูกต้องสำหรับบันทึก');
       }
 
-      // Debug log
+      // แสดงการยืนยันจำนวนคน
+      if (!window.confirm(`ยืนยันการบันทึกส่งงานนักเรียนจำนวน ${payloadData.length} คน ใช่หรือไม่?`)) {
+        setIsSaving(false);
+        return;
+      }
+
+      console.log('--- ข้อมูลส่งงานที่กำลังจะบันทึก ---');
+      console.table(payloadData);
       console.log('Attempting to save assignment to (no-cors mode):', scriptUrl.substring(0, 45) + '...');
 
       await fetch(scriptUrl, {
