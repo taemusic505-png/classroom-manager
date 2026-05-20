@@ -320,9 +320,11 @@ export default function ClassroomManager() {
     if (!formData.subject) return alert('กรุณาเลือกวิชาก่อนบันทึก');
     
     const scriptUrl = import.meta.env.VITE_GOOGLE_APP_SCRIPT_URL;
-    if (!scriptUrl) {
-      console.error('Missing VITE_GOOGLE_APP_SCRIPT_URL');
-      return alert('⚠️ ไม่พบ URL สำหรับบันทึกข้อมูล (VITE_GOOGLE_APP_SCRIPT_URL) กรุณาตรวจสอบการตั้งค่าใน Vercel');
+    
+    // Validate URL
+    if (!scriptUrl || !scriptUrl.startsWith('https://script.google.com')) {
+      console.error('Invalid or missing VITE_GOOGLE_APP_SCRIPT_URL:', scriptUrl);
+      return alert('⚠️ URL สำหรับบันทึกข้อมูลไม่ถูกต้อง หรือยังไม่ได้ตั้งค่าใน Vercel\n\nโปรดตรวจสอบว่าได้ตั้งค่า VITE_GOOGLE_APP_SCRIPT_URL ให้เป็น URL ที่ขึ้นต้นด้วย https://script.google.com ...');
     }
 
     const sheetId = extractSheetId(sheetUrl);
@@ -339,10 +341,12 @@ export default function ClassroomManager() {
         Status: attendanceList[student.name] || 'present'
       }));
 
-      console.log('Sending attendance data...', { action: 'attendance', sheetId, className: globalClass });
+      // Debug log (จะเห็นใน Console F12)
+      console.log('Attempting to save to:', scriptUrl.substring(0, 45) + '...');
 
       const response = await fetch(scriptUrl, {
         method: 'POST',
+        mode: 'cors', // เพิ่มการกำหนด mode ให้ชัดเจน
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ 
           action: 'attendance', 
@@ -353,6 +357,8 @@ export default function ClassroomManager() {
         })
       });
       
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
       const text = await response.text();
       let result;
       try {
@@ -382,9 +388,11 @@ export default function ClassroomManager() {
     if (!assignForm.subject || !assignForm.name) return alert('กรุณาเลือกวิชาและตั้งชื่องานก่อนบันทึก');
 
     const scriptUrl = import.meta.env.VITE_GOOGLE_APP_SCRIPT_URL;
-    if (!scriptUrl) {
-      console.error('Missing VITE_GOOGLE_APP_SCRIPT_URL');
-      return alert('⚠️ ไม่พบ URL สำหรับบันทึกข้อมูล (VITE_GOOGLE_APP_SCRIPT_URL) กรุณาตรวจสอบการตั้งค่าใน Vercel');
+
+    // Validate URL
+    if (!scriptUrl || !scriptUrl.startsWith('https://script.google.com')) {
+      console.error('Invalid or missing VITE_GOOGLE_APP_SCRIPT_URL:', scriptUrl);
+      return alert('⚠️ URL สำหรับบันทึกข้อมูลไม่ถูกต้อง หรือยังไม่ได้ตั้งค่าใน Vercel\n\nโปรดตรวจสอบว่าได้ตั้งค่า VITE_GOOGLE_APP_SCRIPT_URL ให้เป็น URL ที่ขึ้นต้นด้วย https://script.google.com ...');
     }
 
     const sheetId = extractSheetId(sheetUrl);
@@ -402,10 +410,12 @@ export default function ClassroomManager() {
         Status: assignStatusList[student.name] || 'pending'
       }));
 
-      console.log('Sending assignment data...', { action: 'assignment', sheetId, className: globalClass });
+      // Debug log
+      console.log('Attempting to save assignment to:', scriptUrl.substring(0, 45) + '...');
 
       const response = await fetch(scriptUrl, {
         method: 'POST',
+        mode: 'cors',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ 
           action: 'assignment', 
@@ -416,6 +426,8 @@ export default function ClassroomManager() {
         })
       });
       
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
       const text = await response.text();
       let result;
       try {
