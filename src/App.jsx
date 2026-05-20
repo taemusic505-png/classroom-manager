@@ -345,31 +345,35 @@ export default function ClassroomManager() {
 
     setIsSaving(true);
     try {
-      const validStudents = activeClassStudents.filter(s => s.name && s.name.trim().length > 1);
+      // กรองนักเรียนที่มีชื่อจริง
+      const validStudents = activeClassStudents.filter(s => s.name && String(s.name).trim().length > 1);
       
       const payloadData = validStudents.map(student => ({
-        Name: student.name,
-        name: student.name,
+        "Name": student.name,
+        "name": student.name,
+        "Student Name": student.name,
         "ชื่อ": student.name,
-        Subject: formData.subject,
-        Date: selectedDate,
-        Status: attendanceList[student.name] || 'present'
+        "ชื่อ-นามสกุล": student.name,
+        "Subject": formData.subject,
+        "Date": selectedDate,
+        "Status": attendanceList[student.name] || 'present'
       }));
 
       if (payloadData.length === 0) {
         setIsSaving(false);
-        return alert('❌ ไม่พบรายชื่อนักเรียนที่จะบันทึก (ตรวจสอบว่าเลือกชั้นเรียนและวิชาหรือยัง)');
+        return alert('❌ ไม่พบรายชื่อนักเรียนที่จะบันทึก (โปรดเลือกห้องเรียนและวิชา)');
       }
 
-      // แสดงตัวอย่างชื่อเพื่อตรวจสอบ
-      const sampleNames = payloadData.slice(0, 2).map(p => p.Name).join(', ');
-      if (!window.confirm(`ยืนยันการบันทึกจำนวน ${payloadData.length} คน\nตัวอย่างชื่อ: ${sampleNames} ...\n\nใช่หรือไม่?`)) {
+      // แสดงตัวอย่างข้อมูลที่จะส่งเพื่อ Debug
+      const sample = payloadData[0];
+      const confirmMsg = `ยืนยันบันทึกข้อมูล ${payloadData.length} คน\nวิชา: ${sample.Subject}\nวันที่: ${sample.Date}\nตัวอย่างชื่อคนแรก: ${sample.Name}\n\nต้องการดำเนินการต่อหรือไม่?`;
+      
+      if (!window.confirm(confirmMsg)) {
         setIsSaving(false);
         return;
       }
 
-      console.log('Final Payload:', payloadData);
-      console.log('Attempting to save to (no-cors mode):', scriptUrl.substring(0, 45) + '...');
+      console.log('--- Payload Ready ---', payloadData);
 
       await fetch(scriptUrl, {
         method: 'POST',
@@ -415,16 +419,18 @@ export default function ClassroomManager() {
 
     setIsSaving(true);
     try {
-      const validStudents = activeClassStudents.filter(s => s.name && s.name.trim().length > 1);
+      const validStudents = activeClassStudents.filter(s => s.name && String(s.name).trim().length > 1);
 
       const payloadData = validStudents.map(student => ({
-        Name: student.name,
-        name: student.name,
+        "Name": student.name,
+        "name": student.name,
+        "Student Name": student.name,
         "ชื่อ": student.name,
-        Subject: assignForm.subject,
-        Assignment: assignForm.name,
-        DueDate: assignForm.dueDate,
-        Status: assignStatusList[student.name] || 'pending'
+        "ชื่อ-นามสกุล": student.name,
+        "Subject": assignForm.subject,
+        "Assignment": assignForm.name,
+        "DueDate": assignForm.dueDate,
+        "Status": assignStatusList[student.name] || 'pending'
       }));
 
       if (payloadData.length === 0) {
@@ -432,9 +438,11 @@ export default function ClassroomManager() {
         return alert('❌ ไม่พบรายชื่อนักเรียนที่จะบันทึก');
       }
 
-      // แสดงตัวอย่างชื่อเพื่อตรวจสอบ
-      const sampleNames = payloadData.slice(0, 2).map(p => p.Name).join(', ');
-      if (!window.confirm(`ยืนยันการบันทึกส่งงานจำนวน ${payloadData.length} คน\nตัวอย่างชื่อ: ${sampleNames} ...\n\nใช่หรือไม่?`)) {
+      // แสดงตัวอย่างข้อมูลเพื่อ Debug
+      const sample = payloadData[0];
+      const confirmMsg = `ยืนยันบันทึกส่งงาน ${payloadData.length} คน\nงาน: ${sample.Assignment}\nวิชา: ${sample.Subject}\nตัวอย่างชื่อคนแรก: ${sample.Name}\n\nต้องการดำเนินการต่อหรือไม่?`;
+
+      if (!window.confirm(confirmMsg)) {
         setIsSaving(false);
         return;
       }
