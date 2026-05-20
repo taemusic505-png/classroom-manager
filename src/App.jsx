@@ -178,7 +178,11 @@ export default function ClassroomManager() {
   };
 
   // ---------------- DERIVED DATA ----------------
-  const normalizedStudents = useMemo(() => studentsData.map(normalizeRow), [studentsData]);
+  const normalizedStudents = useMemo(() => {
+    return studentsData
+      .map(normalizeRow)
+      .filter(s => s.name && s.name !== '-' && s.name.trim() !== '');
+  }, [studentsData]);
   
   const classList = useMemo(() => {
     return [...new Set(normalizedStudents.map(s => s.className).filter(c => c !== '-'))].sort();
@@ -334,12 +338,19 @@ export default function ClassroomManager() {
 
     setIsSaving(true);
     try {
-      const payloadData = activeClassStudents.map(student => ({
-        Name: student.name,
-        Subject: formData.subject,
-        Date: selectedDate,
-        Status: attendanceList[student.name] || 'present'
-      }));
+      const payloadData = activeClassStudents
+        .filter(student => student.name && student.name !== '-' && student.name.trim() !== '')
+        .map(student => ({
+          Name: student.name,
+          Subject: formData.subject,
+          Date: selectedDate,
+          Status: attendanceList[student.name] || 'present'
+        }));
+
+      if (payloadData.length === 0) {
+        setIsSaving(false);
+        return alert('❌ ไม่พบรายชื่อนักเรียนที่มีข้อมูลถูกต้องสำหรับบันทึก');
+      }
 
       // Debug log
       console.log('Attempting to save to (no-cors mode):', scriptUrl.substring(0, 45) + '...');
@@ -388,13 +399,20 @@ export default function ClassroomManager() {
 
     setIsSaving(true);
     try {
-      const payloadData = activeClassStudents.map(student => ({
-        Name: student.name,
-        Subject: assignForm.subject,
-        Assignment: assignForm.name,
-        DueDate: assignForm.dueDate,
-        Status: assignStatusList[student.name] || 'pending'
-      }));
+      const payloadData = activeClassStudents
+        .filter(student => student.name && student.name !== '-' && student.name.trim() !== '')
+        .map(student => ({
+          Name: student.name,
+          Subject: assignForm.subject,
+          Assignment: assignForm.name,
+          DueDate: assignForm.dueDate,
+          Status: assignStatusList[student.name] || 'pending'
+        }));
+
+      if (payloadData.length === 0) {
+        setIsSaving(false);
+        return alert('❌ ไม่พบรายชื่อนักเรียนที่มีข้อมูลถูกต้องสำหรับบันทึก');
+      }
 
       // Debug log
       console.log('Attempting to save assignment to (no-cors mode):', scriptUrl.substring(0, 45) + '...');
