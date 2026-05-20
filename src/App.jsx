@@ -1,27 +1,70 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { CheckCircle, AlertCircle, BookOpen, Users, Calendar, Settings, ArrowRight, LayoutDashboard, ChevronRight, Clock, MapPin, Sparkles, Filter, Save, Edit3, Search, Lock, User, LogOut, Award, Download } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { CheckCircle, AlertCircle, BookOpen, Users, Calendar, Settings, ArrowRight, LayoutDashboard, Clock, MapPin, Sparkles, Save, Edit3, Lock, User, LogOut, Award, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-const normalizeRow = (row) => {
-  const getVal = (keys) => {
-    for (const key of keys) {
-      if (row[key] && String(row[key]).trim()) return String(row[key]).trim();
-    }
-    return '';
-  };
+const normalizeHeader = (header) => String(header ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+const getRowValue = (row, keys) => {
+  const wantedHeaders = new Set(keys.map(normalizeHeader));
+
+  for (const [header, value] of Object.entries(row || {})) {
+    if (wantedHeaders.has(normalizeHeader(header)) && value !== undefined && value !== null && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+
+  return '';
+};
+
+const createSheetFieldAliases = (value, keys) => {
+  return keys.reduce((aliases, key) => {
+    aliases[key] = value;
+    aliases[` ${key}`] = value;
+    aliases[`${key} `] = value;
+    return aliases;
+  }, {});
+};
+
+const normalizeRow = (row) => {
   return {
-    name: getVal(['Name', 'ชื่อนักเรียน', 'ชื่อ', 'ชื่อ-สกุล', 'ชื่อ-นามสกุล', 'ชื่อ - สกุล']),
-    subject: getVal(['Subject', 'วิชา', 'รายวิชา']) || '-',
-    date: getVal(['Date', 'วันที่', 'วันที่เช็คชื่อ']) || '-',
-    status: getVal(['Status', 'สถานะ']) || '-',
-    assignment: getVal(['Assignment', 'ชื่องาน', 'งาน']) || '-',
-    dueDate: getVal(['DueDate', 'กำหนดส่ง', 'วันส่ง']) || '-',
-    studentId: getVal(['StudentID', 'เลขที่', 'รหัส', 'รหัสนักเรียน']) || '-',
-    className: getVal(['Class', 'ชั้นเรียน', 'ชั้น', 'ห้อง']) || '-'
+    name: getRowValue(row, ['Name', 'name', 'Student Name', 'StudentName', 'ชื่อนักเรียน', 'ชื่อ', 'ชื่อ-สกุล', 'ชื่อ-นามสกุล', 'ชื่อ - สกุล']),
+    subject: getRowValue(row, ['Subject', 'subject', 'วิชา', 'รายวิชา']) || '-',
+    date: getRowValue(row, ['Date', 'date', 'วันที่', 'วันที่เช็คชื่อ']) || '-',
+    status: getRowValue(row, ['Status', 'status', 'สถานะ']) || '-',
+    assignment: getRowValue(row, ['Assignment', 'assignment', 'ชื่องาน', 'งาน']) || '-',
+    dueDate: getRowValue(row, ['DueDate', 'dueDate', 'Due Date', 'กำหนดส่ง', 'วันส่ง']) || '-',
+    studentId: getRowValue(row, ['StudentID', 'studentId', 'Student ID', 'เลขที่', 'รหัส', 'รหัสนักเรียน']) || '-',
+    className: getRowValue(row, ['Class', 'className', 'ClassName', 'ชั้นเรียน', 'ชั้น', 'ห้อง']) || '-'
   };
 };
+
+const createAttendancePayloadRow = ({ student, subject, date, status, className }) => ({
+  ...createSheetFieldAliases(student.name, ['Name', 'name', 'Student Name', 'StudentName', 'ชื่อนักเรียน', 'ชื่อ', 'ชื่อ-สกุล', 'ชื่อ-นามสกุล', 'ชื่อ - สกุล']),
+  ...createSheetFieldAliases(student.studentId, ['StudentID', 'studentId', 'Student ID', 'เลขที่', 'รหัสนักเรียน']),
+  ...createSheetFieldAliases(className, ['Class', 'className', 'ClassName', 'ชั้นเรียน', 'ชั้น', 'ห้อง']),
+  ...createSheetFieldAliases(subject, ['Subject', 'subject', 'วิชา', 'รายวิชา']),
+  ...createSheetFieldAliases(date, ['Date', 'date', 'วันที่', 'วันที่เช็คชื่อ']),
+  ...createSheetFieldAliases(status, ['Status', 'status', 'สถานะ'])
+});
+
+const createAssignmentPayloadRow = ({ student, subject, assignment, dueDate, status, className }) => ({
+  ...createSheetFieldAliases(student.name, ['Name', 'name', 'Student Name', 'StudentName', 'ชื่อนักเรียน', 'ชื่อ', 'ชื่อ-สกุล', 'ชื่อ-นามสกุล', 'ชื่อ - สกุล']),
+  ...createSheetFieldAliases(student.studentId, ['StudentID', 'studentId', 'Student ID', 'เลขที่', 'รหัสนักเรียน']),
+  ...createSheetFieldAliases(className, ['Class', 'className', 'ClassName', 'ชั้นเรียน', 'ชั้น', 'ห้อง']),
+  ...createSheetFieldAliases(subject, ['Subject', 'subject', 'วิชา', 'รายวิชา']),
+  ...createSheetFieldAliases(assignment, ['Assignment', 'assignment', 'ชื่องาน', 'งาน']),
+  ...createSheetFieldAliases(dueDate, ['DueDate', 'dueDate', 'Due Date', 'กำหนดส่ง', 'วันส่ง']),
+  ...createSheetFieldAliases(status, ['Status', 'status', 'สถานะ'])
+});
+
+const DecorativeBackground = () => (
+  <div className="fixed inset-0 overflow-hidden pointer-events-none z-[-1] bg-slate-50">
+    <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-[80px] opacity-60 animate-blob"></div>
+    <div className="absolute top-[20%] right-[-10%] w-[30rem] h-[30rem] bg-cyan-300 rounded-full mix-blend-multiply filter blur-[100px] opacity-60 animate-blob animation-delay-2000"></div>
+    <div className="absolute bottom-[-20%] left-[20%] w-[40rem] h-[40rem] bg-pink-200 rounded-full mix-blend-multiply filter blur-[120px] opacity-60 animate-blob animation-delay-4000"></div>
+  </div>
+);
 
 export default function ClassroomManager() {
   const envSheetId = import.meta.env.VITE_SHEET_ID;
@@ -61,21 +104,12 @@ export default function ClassroomManager() {
   // ---------------- SUMMARY STATES ----------------
   const [summaryClass, setSummaryClass] = useState('');
   const [summaryStudent, setSummaryStudent] = useState('');
-  
-  const [animateTab, setAnimateTab] = useState(false);
-
-  useEffect(() => {
-    setAnimateTab(true);
-    const timer = setTimeout(() => setAnimateTab(false), 600);
-    return () => clearTimeout(timer);
-  }, [activeTab, user]);
-
   const extractSheetId = (url) => {
     const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
     return match ? match[1] : null;
   };
 
-  const fetchSheetData = async (sheetId, sheetName, silent = false) => {
+  const fetchSheetData = useCallback(async (sheetId, sheetName, silent = false) => {
     try {
       const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
       if (!apiKey || apiKey === 'YOUR_API_KEY_HERE') {
@@ -102,19 +136,9 @@ export default function ClassroomManager() {
       if (!silent) alert('❌ ' + error.message);
       return [];
     }
-  };
+  }, []);
 
-  // Fetch data on initial load
-  useEffect(() => {
-    if (sheetUrl && !showSetup) {
-      const sheetId = extractSheetId(sheetUrl);
-      if (sheetId) {
-        loadAllData(sheetId);
-      }
-    }
-  }, [sheetUrl, showSetup]);
-
-  const loadAllData = async (sheetId) => {
+  const loadAllData = useCallback(async (sheetId) => {
     setLoading(true);
     const [attendance, assignments, students, subjects] = await Promise.all([
       fetchSheetData(sheetId, 'Attendance', true),
@@ -128,7 +152,17 @@ export default function ClassroomManager() {
     setStudentsData(students);
     setSubjectsData(subjects);
     setLoading(false);
-  };
+  }, [fetchSheetData]);
+
+  // Fetch data on initial load
+  useEffect(() => {
+    if (sheetUrl && !showSetup) {
+      const sheetId = extractSheetId(sheetUrl);
+      if (sheetId) {
+        Promise.resolve().then(() => loadAllData(sheetId));
+      }
+    }
+  }, [sheetUrl, showSetup, loadAllData]);
 
   // Login handler
   const handleLogin = async (e) => {
@@ -164,7 +198,7 @@ export default function ClassroomManager() {
       } else {
         setLoginError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
       }
-    } catch (error) {
+    } catch {
       setLoginError('เกิดข้อผิดพลาดในการเชื่อมต่อ');
     }
     setLoading(false);
@@ -211,17 +245,27 @@ export default function ClassroomManager() {
     return normalizedStudents.filter(s => s.className === summaryClass).map(s => s.name).sort();
   }, [normalizedStudents, summaryClass]);
 
-  // Init Checklists
-  useEffect(() => {
+  const createInitialStatusLists = (students) => {
     const initialAtt = {};
     const initialAssign = {};
-    activeClassStudents.forEach(s => {
+    students.forEach(s => {
       initialAtt[s.name] = 'present';
       initialAssign[s.name] = 'pending';
     });
+
+    return { initialAtt, initialAssign };
+  };
+
+  const handleGlobalClassChange = (className) => {
+    setGlobalClass(className);
+    const students = className === 'all' ? [] : normalizedStudents.filter(s => s.className === className);
+    const { initialAtt, initialAssign } = createInitialStatusLists(students);
     setAttendanceList(initialAtt);
     setAssignStatusList(initialAssign);
-  }, [activeClassStudents]);
+  };
+
+  const getAttendanceStatus = (name) => attendanceList[name] || 'present';
+  const getAssignmentStatus = (name) => assignStatusList[name] || 'pending';
 
   // Normalized Histories
   const normalizedAttendanceHistory = useMemo(() => {
@@ -348,15 +392,12 @@ export default function ClassroomManager() {
       // กรองนักเรียนที่มีชื่อจริง
       const validStudents = activeClassStudents.filter(s => s.name && String(s.name).trim().length > 1);
       
-      const payloadData = validStudents.map(student => ({
-        "Name": student.name,
-        "name": student.name,
-        "Student Name": student.name,
-        "ชื่อ": student.name,
-        "ชื่อ-นามสกุล": student.name,
-        "Subject": formData.subject,
-        "Date": selectedDate,
-        "Status": attendanceList[student.name] || 'present'
+      const payloadData = validStudents.map(student => createAttendancePayloadRow({
+        student,
+        subject: formData.subject,
+        date: selectedDate,
+        status: getAttendanceStatus(student.name),
+        className: globalClass
       }));
 
       if (payloadData.length === 0) {
@@ -421,16 +462,13 @@ export default function ClassroomManager() {
     try {
       const validStudents = activeClassStudents.filter(s => s.name && String(s.name).trim().length > 1);
 
-      const payloadData = validStudents.map(student => ({
-        "Name": student.name,
-        "name": student.name,
-        "Student Name": student.name,
-        "ชื่อ": student.name,
-        "ชื่อ-นามสกุล": student.name,
-        "Subject": assignForm.subject,
-        "Assignment": assignForm.name,
-        "DueDate": assignForm.dueDate,
-        "Status": assignStatusList[student.name] || 'pending'
+      const payloadData = validStudents.map(student => createAssignmentPayloadRow({
+        student,
+        subject: assignForm.subject,
+        assignment: assignForm.name,
+        dueDate: assignForm.dueDate,
+        status: getAssignmentStatus(student.name),
+        className: globalClass
       }));
 
       if (payloadData.length === 0) {
@@ -601,15 +639,6 @@ export default function ClassroomManager() {
     return normalizedAssignmentHistory.filter(h => h.name === summaryStudent).sort((a,b) => new Date(b.dueDate) - new Date(a.dueDate));
   }, [summaryStudent, normalizedAssignmentHistory]);
 
-
-  const DecorativeBackground = () => (
-    <div className="fixed inset-0 overflow-hidden pointer-events-none z-[-1] bg-slate-50">
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-[80px] opacity-60 animate-blob"></div>
-      <div className="absolute top-[20%] right-[-10%] w-[30rem] h-[30rem] bg-cyan-300 rounded-full mix-blend-multiply filter blur-[100px] opacity-60 animate-blob animation-delay-2000"></div>
-      <div className="absolute bottom-[-20%] left-[20%] w-[40rem] h-[40rem] bg-pink-200 rounded-full mix-blend-multiply filter blur-[120px] opacity-60 animate-blob animation-delay-4000"></div>
-    </div>
-  );
-
   // ================= RENDER SETUP SCREEN =================
   if (showSetup) {
     return (
@@ -753,7 +782,7 @@ export default function ClassroomManager() {
             <div className="glass-card px-5 py-2.5 rounded-full flex items-center gap-3 border-indigo-100 shadow-sm w-full sm:w-auto">
               <Users size={16} className="text-indigo-500" />
               <span className="text-sm font-semibold text-slate-600 whitespace-nowrap">ชั้นเรียน:</span>
-              <select value={globalClass} onChange={(e) => setGlobalClass(e.target.value)} className="w-full sm:w-auto bg-transparent border-none text-indigo-700 font-bold text-sm focus:ring-0 outline-none cursor-pointer pr-4">
+              <select value={globalClass} onChange={(e) => handleGlobalClassChange(e.target.value)} className="w-full sm:w-auto bg-transparent border-none text-indigo-700 font-bold text-sm focus:ring-0 outline-none cursor-pointer pr-4">
                 <option value="all">ดูภาพรวมทุกชั้น</option>
                 {classList.map(cls => <option key={cls} value={cls}>ห้อง {cls}</option>)}
               </select>
@@ -767,14 +796,14 @@ export default function ClassroomManager() {
             <p className="text-slate-500 font-medium animate-pulse">{isSaving ? 'กำลังบันทึกข้อมูล...' : 'กำลังโหลดข้อมูล...'}</p>
           </div>
         ) : (
-          <div className={animateTab ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0 transition-all duration-500 ease-out'}>
+          <div className="opacity-100 translate-y-0 transition-all duration-500 ease-out">
             
             {/* ---------------- ATTENDANCE TAB (TEACHER ONLY) ---------------- */}
             {activeTab === 'attendance' && isTeacher && (
               <div className="space-y-8">
                 {/* Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {getAttendanceStats().map((stat, i) => (
+                  {getAttendanceStats().map((stat) => (
                     <div key={stat.name} className="glass-card rounded-[2rem] p-6 hover:-translate-y-1 transition-all duration-300">
                       <div className="flex items-center gap-4">
                         <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${stat.bg}`}>{stat.icon}</div>
@@ -859,8 +888,8 @@ export default function ClassroomManager() {
                                   <td className="px-6 py-4">
                                     <div className="flex justify-center gap-2">
                                       {['present', 'absent', 'late'].map((s) => (
-                                        <label key={s} className={`cursor-pointer px-4 py-2 rounded-full text-xs font-semibold border ${attendanceList[student.name] === s ? (s === 'present' ? 'bg-emerald-500 text-white border-emerald-500' : s === 'absent' ? 'bg-rose-500 text-white border-rose-500' : 'bg-amber-500 text-white border-amber-500') : 'bg-white text-slate-500'}`}>
-                                          <input type="radio" className="hidden" checked={attendanceList[student.name] === s} onChange={() => handleStatusChange(student.name, s)} />
+                                        <label key={s} className={`cursor-pointer px-4 py-2 rounded-full text-xs font-semibold border ${getAttendanceStatus(student.name) === s ? (s === 'present' ? 'bg-emerald-500 text-white border-emerald-500' : s === 'absent' ? 'bg-rose-500 text-white border-rose-500' : 'bg-amber-500 text-white border-amber-500') : 'bg-white text-slate-500'}`}>
+                                          <input type="radio" className="hidden" checked={getAttendanceStatus(student.name) === s} onChange={() => handleStatusChange(student.name, s)} />
                                           {s === 'present' ? 'มา' : s === 'absent' ? 'ขาด' : 'สาย'}
                                         </label>
                                       ))}
@@ -882,7 +911,7 @@ export default function ClassroomManager() {
             {activeTab === 'assignments' && isTeacher && (
               <div className="space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {getAssignmentStats().map((stat, i) => (
+                  {getAssignmentStats().map((stat) => (
                     <div key={stat.name} className="glass-card rounded-[2rem] p-6 hover:-translate-y-1 transition-all">
                       <div className="flex items-center gap-4">
                         <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${stat.bg}`}>{stat.icon}</div>
@@ -966,8 +995,8 @@ export default function ClassroomManager() {
                                   <td className="px-6 py-4">
                                     <div className="flex justify-center gap-2">
                                       {['completed', 'pending', 'overdue'].map((s) => (
-                                        <label key={s} className={`cursor-pointer px-4 py-2 rounded-full text-xs font-semibold border ${assignStatusList[student.name] === s ? (s === 'completed' ? 'bg-emerald-500 text-white border-emerald-500' : s === 'pending' ? 'bg-blue-500 text-white border-blue-500' : 'bg-rose-500 text-white border-rose-500') : 'bg-white text-slate-500'}`}>
-                                          <input type="radio" className="hidden" checked={assignStatusList[student.name] === s} onChange={() => handleAssignStatusChange(student.name, s)} />
+                                        <label key={s} className={`cursor-pointer px-4 py-2 rounded-full text-xs font-semibold border ${getAssignmentStatus(student.name) === s ? (s === 'completed' ? 'bg-emerald-500 text-white border-emerald-500' : s === 'pending' ? 'bg-blue-500 text-white border-blue-500' : 'bg-rose-500 text-white border-rose-500') : 'bg-white text-slate-500'}`}>
+                                          <input type="radio" className="hidden" checked={getAssignmentStatus(student.name) === s} onChange={() => handleAssignStatusChange(student.name, s)} />
                                           {s === 'completed' ? 'ส่งแล้ว' : s === 'pending' ? 'กำลังทำ' : 'เลยกำหนด'}
                                         </label>
                                       ))}
