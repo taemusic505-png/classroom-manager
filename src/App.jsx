@@ -345,28 +345,30 @@ export default function ClassroomManager() {
 
     setIsSaving(true);
     try {
-      const payloadData = activeClassStudents
-        .filter(student => student.name && student.name.length > 1)
-        .map(student => ({
-          Name: student.name,
-          Subject: formData.subject,
-          Date: selectedDate,
-          Status: attendanceList[student.name] || 'present'
-        }));
+      const validStudents = activeClassStudents.filter(s => s.name && s.name.trim().length > 1);
+      
+      const payloadData = validStudents.map(student => ({
+        Name: student.name,
+        name: student.name,
+        "ชื่อ": student.name,
+        Subject: formData.subject,
+        Date: selectedDate,
+        Status: attendanceList[student.name] || 'present'
+      }));
 
       if (payloadData.length === 0) {
         setIsSaving(false);
-        return alert('❌ ไม่พบรายชื่อนักเรียนที่มีข้อมูลถูกต้องสำหรับบันทึก');
+        return alert('❌ ไม่พบรายชื่อนักเรียนที่จะบันทึก (ตรวจสอบว่าเลือกชั้นเรียนและวิชาหรือยัง)');
       }
 
-      // แสดงการยืนยันจำนวนคน
-      if (!window.confirm(`ยืนยันการบันทึกเช็คชื่อนักเรียนจำนวน ${payloadData.length} คน ใช่หรือไม่?`)) {
+      // แสดงตัวอย่างชื่อเพื่อตรวจสอบ
+      const sampleNames = payloadData.slice(0, 2).map(p => p.Name).join(', ');
+      if (!window.confirm(`ยืนยันการบันทึกจำนวน ${payloadData.length} คน\nตัวอย่างชื่อ: ${sampleNames} ...\n\nใช่หรือไม่?`)) {
         setIsSaving(false);
         return;
       }
 
-      console.log('--- ข้อมูลที่กำลังจะบันทึก ---');
-      console.table(payloadData);
+      console.log('Final Payload:', payloadData);
       console.log('Attempting to save to (no-cors mode):', scriptUrl.substring(0, 45) + '...');
 
       await fetch(scriptUrl, {
@@ -413,29 +415,31 @@ export default function ClassroomManager() {
 
     setIsSaving(true);
     try {
-      const payloadData = activeClassStudents
-        .filter(student => student.name && student.name.length > 1)
-        .map(student => ({
-          Name: student.name,
-          Subject: assignForm.subject,
-          Assignment: assignForm.name,
-          DueDate: assignForm.dueDate,
-          Status: assignStatusList[student.name] || 'pending'
-        }));
+      const validStudents = activeClassStudents.filter(s => s.name && s.name.trim().length > 1);
+
+      const payloadData = validStudents.map(student => ({
+        Name: student.name,
+        name: student.name,
+        "ชื่อ": student.name,
+        Subject: assignForm.subject,
+        Assignment: assignForm.name,
+        DueDate: assignForm.dueDate,
+        Status: assignStatusList[student.name] || 'pending'
+      }));
 
       if (payloadData.length === 0) {
         setIsSaving(false);
-        return alert('❌ ไม่พบรายชื่อนักเรียนที่มีข้อมูลถูกต้องสำหรับบันทึก');
+        return alert('❌ ไม่พบรายชื่อนักเรียนที่จะบันทึก');
       }
 
-      // แสดงการยืนยันจำนวนคน
-      if (!window.confirm(`ยืนยันการบันทึกส่งงานนักเรียนจำนวน ${payloadData.length} คน ใช่หรือไม่?`)) {
+      // แสดงตัวอย่างชื่อเพื่อตรวจสอบ
+      const sampleNames = payloadData.slice(0, 2).map(p => p.Name).join(', ');
+      if (!window.confirm(`ยืนยันการบันทึกส่งงานจำนวน ${payloadData.length} คน\nตัวอย่างชื่อ: ${sampleNames} ...\n\nใช่หรือไม่?`)) {
         setIsSaving(false);
         return;
       }
 
-      console.log('--- ข้อมูลส่งงานที่กำลังจะบันทึก ---');
-      console.table(payloadData);
+      console.log('Final Assignment Payload:', payloadData);
       console.log('Attempting to save assignment to (no-cors mode):', scriptUrl.substring(0, 45) + '...');
 
       await fetch(scriptUrl, {
