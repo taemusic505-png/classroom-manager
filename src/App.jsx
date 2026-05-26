@@ -111,6 +111,266 @@ const DecorativeBackground = () => (
   </div>
 );
 
+// Timetable Data and Fuzzy Matching Constants
+const TIMETABLE_DAYS = [
+  { name: 'จันทร์', color: 'bg-yellow-400 text-slate-800 font-bold', code: 'Mon', index: 0, hoverClass: 'hover:bg-yellow-50/50' },
+  { name: 'อังคาร', color: 'bg-pink-400 text-white font-bold', code: 'Tue', index: 1, hoverClass: 'hover:bg-pink-50/50' },
+  { name: 'พุธ', color: 'bg-emerald-500 text-white font-bold', code: 'Wed', index: 2, hoverClass: 'hover:bg-emerald-50/50' },
+  { name: 'พฤหัสบดี', color: 'bg-orange-500 text-white font-bold', code: 'Thu', index: 3, hoverClass: 'hover:bg-orange-50/50' },
+  { name: 'ศุกร์', color: 'bg-sky-500 text-white font-bold', code: 'Fri', index: 4, hoverClass: 'hover:bg-sky-50/50' },
+];
+
+const TIMETABLE_PERIODS = [
+  { number: 1, time: '8.30 - 9.30' },
+  { number: 2, time: '9.30 - 10.30' },
+  { number: 3, time: '10.30 - 11.30' },
+  { number: 'break', label: 'พักกลางวัน', time: '11.30 - 12.30' },
+  { number: 4, time: '12.30 - 13.30' },
+  { number: 5, time: '13.30 - 14.30' },
+  { number: 6, time: '14.30 - 15.30' },
+  { number: 7, time: '-' }
+];
+
+const SCHEDULE = {
+  'จันทร์': {
+    2: { subject: 'คณิตฯเพิ่มเติม', class: 'ม.1' },
+    4: { subject: 'ดนตรี', class: 'ป.6' },
+    5: { subject: 'ซ่อมเสริม(ดนตรี)', class: 'ป.6' },
+    6: { subject: 'ศิลปะ', class: 'ป.5' },
+  },
+  'อังคาร': {
+    2: { subject: 'ศิลปะ', class: 'ม.1' },
+    3: { subject: 'ดนตรี', class: 'ม.1' },
+    4: { subject: 'ดนตรี', class: 'ป.4' },
+    5: { subject: 'ซ่อมเสริม(ดนตรี)', class: 'ป.4' },
+  },
+  'พุธ': {
+    1: { subject: 'ศิลปะ', class: 'ป.4' },
+    2: { subject: 'ศิลปะ', class: 'ม.3' },
+    3: { subject: 'ดนตรี', class: 'ม.3' },
+    4: { subject: 'ดนตรี', class: 'ป.5' },
+    5: { subject: 'ซ่อมเสริม(ดนตรี)', class: 'ป.5' },
+    6: { subject: 'ชุมนุม1', class: 'all' },
+  },
+  'พฤหัสบดี': {
+    2: { subject: 'ศิลปะ', class: 'ม.2' },
+    3: { subject: 'ดนตรี', class: 'ม.2' },
+    4: { subject: 'วิทย์คำนวณ', class: 'ม.1' },
+    5: { subject: 'วิทย์คำนวณ', class: 'ม.3' },
+    6: { subject: 'ลูกเสือ', class: 'all' },
+  },
+  'ศุกร์': {
+    2: { subject: 'ศิลปะ', class: 'ป.6' },
+    3: { subject: 'คณิตฯเพิ่มเติม', class: 'ม.1' },
+    4: { subject: 'กิจกรรมอิสระ4', class: 'ป.1' },
+    5: { subject: 'วิทย์คำนวณ', class: 'ม.2' },
+  }
+};
+
+const cleanKey = (str) => {
+  if (!str) return '';
+  return str
+    .replace(/[\s()-]/g, '')
+    .replace(/วิทยาการ/g, 'วิทย')
+    .replace(/วิทยา/g, 'วิทย')
+    .replace(/วิทย์/g, 'วิทย')
+    .replace(/คณิตศาสตร์/g, 'คณิต')
+    .replace(/คณิตฯ/g, 'คณิต')
+    .toLowerCase();
+};
+
+const resolveSubjectFromTimetable = (timetableSubject, timetableClass, subjectList) => {
+  if (!subjectList || subjectList.length === 0) return '';
+  
+  const cleanedSub = timetableSubject.trim();
+  const cleanedClass = timetableClass.trim();
+  
+  // 1. Exact match
+  const exactMatch = subjectList.find(s => s === cleanedSub || s === `${cleanedSub} ${cleanedClass}`);
+  if (exactMatch) return exactMatch;
+  
+  // 2. Special case: Art / Music (ศิลปะ / ดนตรี)
+  const isArtOrMusic = (cleanedSub.includes('ศิลปะ') || cleanedSub.includes('ดนตรี')) && !cleanedSub.includes('ซ่อมเสริม');
+  if (isArtOrMusic) {
+    const artMusicMatch = subjectList.find(s => {
+      const lowerS = s.toLowerCase();
+      const hasArt = lowerS.includes('ศิลปะ');
+      const hasMusic = lowerS.includes('ดนตรี');
+      const hasClass = cleanedClass === 'all' || lowerS.includes(cleanedClass.toLowerCase());
+      return hasArt && hasMusic && hasClass;
+    });
+    if (artMusicMatch) return artMusicMatch;
+    
+    const singleMatch = subjectList.find(s => {
+      const lowerS = s.toLowerCase();
+      const hasArtOrMusic = lowerS.includes('ศิลปะ') || lowerS.includes('ดนตรี');
+      const hasClass = cleanedClass === 'all' || lowerS.includes(cleanedClass.toLowerCase());
+      return hasArtOrMusic && hasClass;
+    });
+    if (singleMatch) return singleMatch;
+  }
+  
+  // 3. General fuzzy matcher
+  const targetKey = cleanKey(cleanedSub);
+  
+  let match = subjectList.find(s => {
+    const sClean = cleanKey(s);
+    const hasClass = cleanedClass === 'all' || sClean.includes(cleanKey(cleanedClass));
+    return hasClass && (sClean.includes(targetKey) || targetKey.includes(sClean));
+  });
+  
+  if (match) return match;
+  
+  match = subjectList.find(s => {
+    const sClean = cleanKey(s);
+    return sClean.includes(targetKey) || targetKey.includes(sClean);
+  });
+  
+  if (match) return match;
+
+  if (targetKey.length >= 3) {
+    const shortKey = targetKey.substring(0, 4);
+    match = subjectList.find(s => {
+      const sClean = cleanKey(s);
+      return sClean.includes(shortKey);
+    });
+    if (match) return match;
+  }
+  
+  return '';
+};
+
+const TimetableGrid = ({ subjectList, onCellClick }) => {
+  return (
+    <div className="glass-card rounded-[2rem] p-6 shadow-xl border border-slate-100/50 bg-white/40 animate-fade-in-up">
+      {/* Header */}
+      <div className="text-center mb-6">
+        <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">ตารางเรียนครูผู้สอน</span>
+        <h2 className="text-2xl font-black text-slate-800 mt-2 flex items-center justify-center gap-2">
+          <Sparkles className="text-yellow-500 fill-yellow-400" size={24} /> โรงเรียนบ้านปากยาง
+        </h2>
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-3 text-sm text-slate-500 font-medium bg-white/40 backdrop-blur-md py-2 px-6 rounded-2xl border border-slate-200/50 inline-flex">
+          <span>ครูผู้สอน: <strong className="text-indigo-600">ครูวีรวัฒน์</strong></span>
+          <span className="w-1.5 h-1.5 bg-slate-300 rounded-full"></span>
+          <span>จำนวนภาระงาน: <strong className="text-slate-700">23 คาบ</strong></span>
+          <span className="w-1.5 h-1.5 bg-slate-300 rounded-full"></span>
+          <span>ปีการศึกษา: <strong className="text-slate-700">2569</strong></span>
+        </div>
+      </div>
+      
+      {/* Table Container */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200/60 bg-white/50 backdrop-blur-md">
+        <table className="w-full min-w-[950px] border-collapse text-center">
+          <thead>
+            {/* Period numbers */}
+            <tr className="bg-slate-50/80 text-xs font-bold text-slate-500 border-b border-slate-200">
+              <th rowSpan={2} className="p-4 border-r border-slate-200 w-[110px] bg-slate-100/70 font-black text-slate-700">วัน</th>
+              {TIMETABLE_PERIODS.map((p, idx) => {
+                if (p.number === 'break') {
+                  return (
+                    <th key={idx} rowSpan={2} className="p-2 border-r border-slate-200 w-[50px] bg-amber-50/40 text-amber-800 font-black">
+                      <div className="writing-vertical-lr select-none tracking-widest uppercase text-xs mx-auto">
+                        พักกลางวัน
+                      </div>
+                    </th>
+                  );
+                }
+                return (
+                  <th key={idx} className="p-2 border-r border-slate-200 text-sm font-black text-slate-700 bg-slate-100/40">
+                    คาบที่ {p.number}
+                  </th>
+                );
+              })}
+            </tr>
+            {/* Period timings */}
+            <tr className="bg-slate-50/50 text-[10px] font-semibold text-slate-400 border-b border-slate-200">
+              {TIMETABLE_PERIODS.filter(p => p.number !== 'break').map((p, idx) => (
+                <th key={idx} className="p-2 border-r border-slate-200 font-medium">
+                  {p.time}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {TIMETABLE_DAYS.map((day, dayIdx) => {
+              const rowSchedule = SCHEDULE[day.name] || {};
+              return (
+                <tr key={dayIdx} className="border-b border-slate-200/60 hover:bg-slate-50/20 transition-all">
+                  {/* Day Label Cell */}
+                  <td className={`p-4 border-r border-slate-200 ${day.color} text-sm font-extrabold text-center select-none shadow-sm`}>
+                    {day.name}
+                  </td>
+                  
+                  {/* Periods Cells */}
+                  {TIMETABLE_PERIODS.map((period, pIdx) => {
+                    if (period.number === 'break') {
+                      return null;
+                    }
+                    
+                    const slot = rowSchedule[period.number];
+                    if (!slot) {
+                      return (
+                        <td key={pIdx} className="p-2 border-r border-slate-200 bg-slate-50/10 text-slate-300 text-xs italic select-none">
+                          -
+                        </td>
+                      );
+                    }
+                    
+                    const resolvedSub = resolveSubjectFromTimetable(slot.subject, slot.class, subjectList);
+                    const isMatched = !!resolvedSub;
+                    
+                    return (
+                      <td key={pIdx} className="p-2 border-r border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => onCellClick(day.name, slot)}
+                          className={`w-full h-full min-h-[76px] p-2.5 rounded-2xl flex flex-col justify-between items-center text-center cursor-pointer transition-all transform hover:scale-[1.02] active:scale-[0.98] border shadow-xs ${
+                            isMatched
+                              ? 'bg-white hover:bg-indigo-50/50 border-indigo-200 hover:border-indigo-400 text-slate-800 shadow-indigo-100/40'
+                              : 'bg-amber-50 hover:bg-amber-100/50 border-amber-200 hover:border-amber-300 text-amber-800 shadow-amber-100/40'
+                          }`}
+                        >
+                          <div className="w-full flex justify-end">
+                            {isMatched ? (
+                              <span className="w-4.5 h-4.5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[9px] font-black shadow-2xs" title="พบวิชานี้ในระบบแล้ว">
+                                ✓
+                              </span>
+                            ) : (
+                              <span className="w-4.5 h-4.5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] font-black shadow-2xs" title="วิชาใหม่ (คลิกเพื่อดูคู่มือวิธีเพิ่ม)">
+                                ?
+                              </span>
+                            )}
+                          </div>
+                          <div className="font-bold text-[12px] leading-tight mt-0.5 line-clamp-2">
+                            {slot.subject}
+                          </div>
+                          <div className="text-[10px] font-semibold opacity-75 mt-1 bg-slate-100 px-2 py-0.5 rounded-md text-slate-600">
+                            {slot.class === 'all' ? 'ทุกชั้นเรียน' : `ห้อง ${slot.class}`}
+                          </div>
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      
+      {/* Timetable Legend */}
+      <div className="flex flex-wrap items-center justify-center gap-6 mt-4 pt-4 border-t border-slate-200/60 text-xs font-semibold text-slate-500">
+        <span className="flex items-center gap-2">
+          <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center text-white text-[8px]">✓</span> วิชาที่มีอยู่ในระบบ Sheets (คลิกเพื่อเริ่มเช็คชื่อทันที)
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="w-3.5 h-3.5 rounded-full bg-amber-500 flex items-center justify-center text-white text-[8px]">?</span> วิชาใหม่/ซ่อมเสริม (คลิกเพื่อดูคำแนะนำการเพิ่มวิชา)
+        </span>
+      </div>
+    </div>
+  );
+};
+
 export default function ClassroomManager() {
   const envSheetId = import.meta.env.VITE_SHEET_ID;
   const initialSheetUrl = envSheetId ? `https://docs.google.com/spreadsheets/d/${envSheetId}/edit` : (localStorage.getItem('sheetUrl') || '');
@@ -142,6 +402,8 @@ export default function ClassroomManager() {
   const [formData, setFormData] = useState({ subject: '' });
   const [weeklyAttendance, setWeeklyAttendance] = useState({});
   const [loadedKey, setLoadedKey] = useState('');
+  const [timetableAlert, setTimetableAlert] = useState({ isOpen: false, subject: '', className: '' });
+
 
   const mondayStr = useMemo(() => {
     if (!selectedDate) return '';
@@ -290,6 +552,44 @@ export default function ClassroomManager() {
   const subjectList = useMemo(() => {
     return [...new Set(subjectsData.map(normalizeRow).map(s => s.subject).filter(s => s !== '-'))];
   }, [subjectsData]);
+
+  const handleTimetableCellClick = useCallback((dayName, slotInfo) => {
+    const dayOffsets = {
+      'จันทร์': 0,
+      'อังคาร': 1,
+      'พุธ': 2,
+      'พฤหัสบดี': 3,
+      'ศุกร์': 4
+    };
+    const offset = dayOffsets[dayName];
+    if (offset === undefined) return;
+    
+    const currentRefDate = selectedDate ? new Date(selectedDate) : new Date();
+    const currentMonday = getMonday(currentRefDate);
+    const targetDate = new Date(currentMonday);
+    targetDate.setDate(currentMonday.getDate() + offset);
+    const targetDateStr = targetDate.toISOString().split('T')[0];
+    
+    setSelectedDate(targetDateStr);
+    
+    const targetClass = slotInfo.class;
+    if (targetClass !== 'all') {
+      setGlobalClass(targetClass);
+    }
+    
+    const resolvedSub = resolveSubjectFromTimetable(slotInfo.subject, targetClass, subjectList);
+    
+    if (resolvedSub) {
+      setFormData({ subject: resolvedSub });
+    } else {
+      setFormData({ subject: '' });
+      setTimetableAlert({
+        isOpen: true,
+        subject: slotInfo.subject,
+        className: targetClass
+      });
+    }
+  }, [selectedDate, subjectList]);
 
   // Active Class Students for Checklists
   const activeClassStudents = useMemo(() => {
@@ -938,14 +1238,20 @@ export default function ClassroomManager() {
                 </div>
 
                 {globalClass === 'all' ? (
-                  <div className="glass-card rounded-[2rem] p-12 text-center flex flex-col items-center justify-center border-dashed border-2 border-slate-300/50 bg-white/40">
-                    <Users size={48} className="text-indigo-300 mb-4" />
-                    <h3 className="text-lg font-bold text-slate-700">กรุณาเลือกชั้นเรียนที่แถบด้านบน</h3>
-                    <p className="text-sm text-slate-500 mt-1">เพื่อเริ่มทำการเช็คชื่อ</p>
+                  <div className="space-y-8">
+                    <div className="glass-card rounded-[2rem] p-4 text-center flex flex-col items-center justify-center border-dashed border-2 border-indigo-200/50 bg-indigo-50/20 animate-fade-in-up">
+                      <Users size={32} className="text-indigo-500 mb-2" />
+                      <h3 className="text-md font-bold text-indigo-900">กรุณาเลือกชั้นเรียนที่แถบด้านบน หรือคลิกจากตารางเรียนครูวีรวัฒน์ด้านล่าง</h3>
+                      <p className="text-xs text-indigo-700/70 mt-0.5">ระบบจะเลือกชั้นเรียนและรายวิชาให้โดยอัตโนมัติ</p>
+                    </div>
+                    <TimetableGrid 
+                      subjectList={subjectList}
+                      onCellClick={handleTimetableCellClick}
+                    />
                   </div>
                 ) : (
                   <>
-                    <div className="glass-card rounded-[2rem] p-6 flex flex-col gap-4 shadow-sm mb-8">
+                    <div className="glass-card rounded-[2rem] p-6 flex flex-col gap-4 shadow-sm mb-8 animate-fade-in-up">
                       {pastAttendanceOptions.length > 0 && (
                         <div className="w-full pb-4 border-b border-slate-100">
                           <label className="block text-xs font-semibold text-indigo-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Edit3 size={14}/> เลือกสัปดาห์เดิมเพื่อแก้ไข</label>
@@ -978,10 +1284,16 @@ export default function ClassroomManager() {
                     </div>
 
                     {!formData.subject ? (
-                      <div className="glass-card rounded-[2rem] p-12 text-center flex flex-col items-center justify-center border-dashed border-2 border-slate-300/50 bg-white/40 animate-fade-in-up">
-                        <BookOpen size={48} className="text-indigo-300 mb-4 animate-bounce" />
-                        <h3 className="text-lg font-bold text-slate-700">กรุณาเลือกรายวิชาในกล่องด้านบน</h3>
-                        <p className="text-sm text-slate-500 mt-1">เพื่อเปิดตารางเช็คชื่อเข้าเรียนประจำสัปดาห์</p>
+                      <div className="space-y-8 animate-fade-in-up">
+                        <div className="glass-card rounded-[2rem] p-4 text-center flex flex-col items-center justify-center border-dashed border-2 border-indigo-200/50 bg-indigo-50/20">
+                          <BookOpen size={32} className="text-indigo-500 mb-2 animate-pulse" />
+                          <h3 className="text-md font-bold text-indigo-900">กรุณาเลือกวิชาในกล่องด้านบน หรือคลิกจากตารางเรียนด้านล่าง</h3>
+                          <p className="text-xs text-indigo-700/70 mt-0.5">คลิกเพื่อคำนวณวันและรายวิชาที่สัมพันธ์ให้อัตโนมัติ</p>
+                        </div>
+                        <TimetableGrid 
+                          subjectList={subjectList}
+                          onCellClick={handleTimetableCellClick}
+                        />
                       </div>
                     ) : activeClassStudents.length > 0 && (
                       <div className="glass-card rounded-[2rem] overflow-hidden shadow-lg shadow-slate-200/50">
@@ -1386,6 +1698,67 @@ export default function ClassroomManager() {
         )}
       </main>
 
+      {timetableAlert.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-slate-100 flex flex-col gap-6 relative animate-scale-up">
+            <button 
+              onClick={() => setTimetableAlert({ isOpen: false, subject: '', className: '' })}
+              className="absolute top-6 right-6 w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors font-bold"
+            >
+              ✕
+            </button>
+            
+            <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600">
+                <BookOpen size={24} />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">ไม่พบวิชาใน Google Sheets</h3>
+                <p className="text-sm text-slate-500">วิชา: {timetableAlert.subject} ห้อง {timetableAlert.className === 'all' ? 'ทุกชั้นเรียน' : timetableAlert.className}</p>
+              </div>
+            </div>
+            
+            <div className="space-y-4 text-sm text-slate-600">
+              <p className="font-semibold text-slate-700">เนื่องจากระบบนี้ดึงข้อมูลจาก Google Sheets ของคุณแบบเรียลไทม์ คุณสามารถเพิ่มวิชานี้ได้ตามขั้นตอนดังนี้:</p>
+              <ol className="list-decimal pl-5 space-y-2.5">
+                <li>เปิด Google Sheets ของคุณ</li>
+                <li>ไปที่แผ่นงานชื่อ <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 font-mono rounded font-bold">Subjects</span></li>
+                <li>พิมพ์เพิ่มรายชื่อวิชาใหม่ในแถวล่างสุดเป็น: <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-mono rounded font-bold">{timetableAlert.subject === 'ซ่อมเสริม(ดนตรี)' ? `ซ่อมเสริม(ดนตรี) ${timetableAlert.className}` : `${timetableAlert.subject} ${timetableAlert.className}`}</span></li>
+                {timetableAlert.className !== 'all' && (
+                  <li>
+                    ตรวจสอบว่าห้องเรียน <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-mono rounded font-bold">{timetableAlert.className}</span> มีนักเรียนในแผ่นงาน <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 font-mono rounded font-bold">Students</span> แล้ว
+                  </li>
+                )}
+              </ol>
+              <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 text-xs text-indigo-700 leading-relaxed mt-2 flex gap-3">
+                <Sparkles size={24} className="shrink-0 text-indigo-500 animate-pulse" />
+                <div>
+                  หลังจากกรอกใน Google Sheets แล้ว ให้กดปุ่ม <strong>"โหลดข้อมูลใหม่"</strong> บนแผงควบคุมระบบ (หรือรีเฟรชหน้าเว็บ) เพื่อดึงข้อมูลมาใช้งานได้ทันที!
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
+              <button 
+                onClick={() => setTimetableAlert({ isOpen: false, subject: '', className: '' })}
+                className="px-6 py-2.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl font-semibold transition-all text-sm animate-scale-up"
+              >
+                เข้าใจแล้ว
+              </button>
+              {sheetUrl && (
+                <a 
+                  href={sheetUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="px-6 py-2.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl font-semibold transition-all text-sm flex items-center gap-2"
+                >
+                  เปิด Google Sheets <ArrowRight size={16} />
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <style dangerouslySetInnerHTML={{__html: `
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
