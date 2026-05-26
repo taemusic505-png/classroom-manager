@@ -48,15 +48,50 @@ const createAttendancePayloadRow = ({ student, subject, date, status, className 
   ...createSheetFieldAliases(status, ['Status', 'status', 'สถานะ'])
 });
 
-const createAssignmentPayloadRow = ({ student, subject, assignment, dueDate, status, className }) => ({
-  ...createSheetFieldAliases(student.name, ['Name', 'name', 'Student Name', 'StudentName', 'ชื่อนักเรียน', 'ชื่อ', 'ชื่อ-สกุล', 'ชื่อ-นามสกุล', 'ชื่อ - สกุล']),
-  ...createSheetFieldAliases(student.studentId, ['StudentID', 'studentId', 'Student ID', 'เลขที่', 'รหัสนักเรียน']),
-  ...createSheetFieldAliases(className, ['Class', 'className', 'ClassName', 'ชั้นเรียน', 'ชั้น', 'ห้อง']),
-  ...createSheetFieldAliases(subject, ['Subject', 'subject', 'วิชา', 'รายวิชา']),
-  ...createSheetFieldAliases(assignment, ['Assignment', 'assignment', 'ชื่องาน', 'งาน']),
-  ...createSheetFieldAliases(dueDate, ['DueDate', 'dueDate', 'Due Date', 'กำหนดส่ง', 'วันส่ง']),
-  ...createSheetFieldAliases(status, ['Status', 'status', 'สถานะ'])
-});
+
+const getMonday = (d) => {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+  return new Date(date.setDate(diff));
+};
+
+const getWeekDays = (mondayDate) => {
+  const days = [];
+  const base = new Date(mondayDate);
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    days.push(d.toISOString().split('T')[0]);
+  }
+  return days;
+};
+
+const formatThaiDate = (dateStr) => {
+  if (!dateStr || dateStr === '-') return '-';
+  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const d = new Date(dateStr);
+  const day = d.getDate();
+  const month = months[d.getMonth()];
+  const year = d.getFullYear() + 543;
+  return `${day} ${month} ${year}`;
+};
+
+const formatHeaderDate = (dateStr) => {
+  if (!dateStr || dateStr === '-') return '';
+  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const d = new Date(dateStr);
+  return `${d.getDate()} ${months[d.getMonth()]}`;
+};
+
+const splitName = (fullName) => {
+  if (!fullName) return { firstName: '-', lastName: '-' };
+  const trimmed = fullName.trim();
+  const parts = trimmed.split(/\s+/);
+  const firstName = parts[0] || '-';
+  const lastName = parts.slice(1).join(' ') || '-';
+  return { firstName, lastName };
+};
 
 const DecorativeBackground = () => (
   <div className="fixed inset-0 overflow-hidden pointer-events-none z-[-1] bg-slate-50">
@@ -95,7 +130,20 @@ export default function ClassroomManager() {
   // ---------------- ATTENDANCE STATES ----------------
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [formData, setFormData] = useState({ subject: '' });
-  const [attendanceList, setAttendanceList] = useState({});
+  const [weeklyAttendance, setWeeklyAttendance] = useState({});
+  const [loadedKey, setLoadedKey] = useState('');
+
+  const mondayStr = useMemo(() => {
+    if (!selectedDate) return '';
+    return getMonday(new Date(selectedDate)).toISOString().split('T')[0];
+  }, [selectedDate]);
+
+  const weekdays = useMemo(() => {
+    if (!mondayStr) return [];
+    return getWeekDays(new Date(mondayStr));
+  }, [mondayStr]);
+
+  const currentKey = `${globalClass}|${formData.subject}|${mondayStr}`;
 
   // ---------------- ASSIGNMENT STATES ----------------
   const [assignForm, setAssignForm] = useState({ subject: '', name: '', dueDate: new Date().toISOString().split('T')[0] });
@@ -259,13 +307,39 @@ export default function ClassroomManager() {
   const handleGlobalClassChange = (className) => {
     setGlobalClass(className);
     const students = className === 'all' ? [] : normalizedStudents.filter(s => s.className === className);
-    const { initialAtt, initialAssign } = createInitialStatusLists(students);
-    setAttendanceList(initialAtt);
+    const { initialAssign } = createInitialStatusLists(students);
     setAssignStatusList(initialAssign);
+    setLoadedKey(''); // Force reload weekly attendance
   };
 
-  const getAttendanceStatus = (name) => attendanceList[name] || 'present';
+  const getAttendanceStatus = (name, date) => weeklyAttendance[name]?.[date] || 'present';
   const getAssignmentStatus = (name) => assignStatusList[name] || 'pending';
+
+  // Load weekly attendance when currentKey or history changes
+  useEffect(() => {
+    if (globalClass === 'all' || !formData.subject || !mondayStr) {
+      setWeeklyAttendance({});
+      setLoadedKey('');
+      return;
+    }
+
+    if (loadedKey !== currentKey) {
+      const newWeeklyAtt = {};
+      activeClassStudents.forEach(student => {
+        newWeeklyAtt[student.name] = {};
+        weekdays.forEach(dateStr => {
+          const record = filteredAttendanceHistory.find(r => 
+            r.name === student.name && 
+            r.subject === formData.subject && 
+            r.date === dateStr
+          );
+          newWeeklyAtt[student.name][dateStr] = record ? record.status : 'present';
+        });
+      });
+      setWeeklyAttendance(newWeeklyAtt);
+      setLoadedKey(currentKey);
+    }
+  }, [currentKey, activeClassStudents, weekdays, filteredAttendanceHistory, loadedKey, globalClass, formData.subject, mondayStr]);
 
   // Normalized Histories
   const normalizedAttendanceHistory = useMemo(() => {
@@ -294,18 +368,21 @@ export default function ClassroomManager() {
     return normalizedAssignmentHistory.filter(r => r.className === globalClass);
   }, [normalizedAssignmentHistory, globalClass]);
 
-  // Options for past attendance
+  // Options for past attendance (grouped by week)
   const pastAttendanceOptions = useMemo(() => {
     const options = [];
     const seen = new Set();
     filteredAttendanceHistory.forEach(record => {
-      const key = `${record.date}|${record.subject}`;
-      if (!seen.has(key) && record.date !== '-' && record.subject !== '-') {
+      if (record.date === '-' || record.subject === '-') return;
+      const monday = getMonday(new Date(record.date));
+      const mStr = monday.toISOString().split('T')[0];
+      const key = `${mStr}|${record.subject}`;
+      if (!seen.has(key)) {
         seen.add(key);
-        options.push({ date: record.date, subject: record.subject });
+        options.push({ mondayStr: mStr, subject: record.subject });
       }
     });
-    return options.sort((a, b) => new Date(b.date) - new Date(a.date));
+    return options.sort((a, b) => new Date(b.mondayStr) - new Date(a.mondayStr));
   }, [filteredAttendanceHistory]);
 
   // Options for past assignments
@@ -324,29 +401,55 @@ export default function ClassroomManager() {
 
 
   // ---------------- HANDLERS ----------------
-  const handleStatusChange = (name, status) => setAttendanceList(prev => ({ ...prev, [name]: status }));
+  const handleStatusChange = (name, date, status) => {
+    setWeeklyAttendance(prev => ({
+      ...prev,
+      [name]: {
+        ...(prev[name] || {}),
+        [date]: status
+      }
+    }));
+  };
+
+  const toggleAttendanceStatus = (name, date) => {
+    const currentStatus = getAttendanceStatus(name, date);
+    let nextStatus = 'present';
+    if (currentStatus === 'present') {
+      nextStatus = 'absent';
+    } else if (currentStatus === 'absent') {
+      nextStatus = 'late';
+    } else {
+      nextStatus = 'present';
+    }
+    handleStatusChange(name, date, nextStatus);
+  };
+
+  const handleMarkAllDayPresent = (dateStr) => {
+    setWeeklyAttendance(prev => {
+      const updated = { ...prev };
+      activeClassStudents.forEach(student => {
+        if (!updated[student.name]) {
+          updated[student.name] = {};
+        }
+        updated[student.name][dateStr] = 'present';
+      });
+      return updated;
+    });
+  };
+
   const handleAssignStatusChange = (name, status) => setAssignStatusList(prev => ({ ...prev, [name]: status }));
 
   const handleLoadPastAttendance = (val) => {
     if (!val) {
       setSelectedDate(new Date().toISOString().split('T')[0]);
       setFormData({ subject: '' });
-      const initialAtt = {};
-      activeClassStudents.forEach(s => initialAtt[s.name] = 'present');
-      setAttendanceList(initialAtt);
+      setLoadedKey('');
       return;
     }
-    const [date, subject] = val.split('|');
-    setSelectedDate(date);
+    const [mStr, subject] = val.split('|');
+    setSelectedDate(mStr);
     setFormData({ subject });
-    
-    const pastRecords = filteredAttendanceHistory.filter(r => r.date === date && r.subject === subject);
-    const newAttList = {};
-    activeClassStudents.forEach(s => {
-      const record = pastRecords.find(r => r.name === s.name);
-      newAttList[s.name] = record ? record.status : 'present';
-    });
-    setAttendanceList(newAttList);
+    setLoadedKey('');
   };
 
   const handleLoadPastAssignment = (val) => {
@@ -389,32 +492,35 @@ export default function ClassroomManager() {
 
     setIsSaving(true);
     try {
-      // กรองนักเรียนที่มีชื่อจริง
       const validStudents = activeClassStudents.filter(s => s.name && String(s.name).trim().length > 1);
       
-      const payloadData = validStudents.map(student => createAttendancePayloadRow({
-        student,
-        subject: formData.subject,
-        date: selectedDate,
-        status: getAttendanceStatus(student.name),
-        className: globalClass
-      }));
+      const payloadData = [];
+      validStudents.forEach(student => {
+        weekdays.forEach(dateStr => {
+          const status = getAttendanceStatus(student.name, dateStr);
+          payloadData.push(createAttendancePayloadRow({
+            student,
+            subject: formData.subject,
+            date: dateStr,
+            status,
+            className: globalClass
+          }));
+        });
+      });
 
       if (payloadData.length === 0) {
         setIsSaving(false);
         return alert('❌ ไม่พบรายชื่อนักเรียนที่จะบันทึก (โปรดเลือกห้องเรียนและวิชา)');
       }
 
-      // แสดงตัวอย่างข้อมูลที่จะส่งเพื่อ Debug
-      const sample = payloadData[0];
-      const confirmMsg = `ยืนยันบันทึกข้อมูล ${payloadData.length} คน\nวิชา: ${sample.Subject}\nวันที่: ${sample.Date}\nตัวอย่างชื่อคนแรก: ${sample.Name}\n\nต้องการดำเนินการต่อหรือไม่?`;
+      const confirmMsg = `ยืนยันบันทึกข้อมูลการเช็คชื่อเข้าเรียน\nห้อง: ${globalClass}\nวิชา: ${formData.subject}\nสัปดาห์วันที่: ${formatThaiDate(mondayStr)} - ${formatThaiDate(weekdays[4])}\nจำนวนนักเรียน: ${validStudents.length} คน (รวม ${payloadData.length} แถว)\n\nต้องการดำเนินการต่อหรือไม่?`;
       
       if (!window.confirm(confirmMsg)) {
         setIsSaving(false);
         return;
       }
 
-      console.log('--- Payload Ready ---', payloadData);
+      console.log('--- Bulk Payload Ready ---', payloadData);
 
       await fetch(scriptUrl, {
         method: 'POST',
@@ -429,8 +535,8 @@ export default function ClassroomManager() {
         })
       });
       
-      // เนื่องจากโหมด no-cors จะไม่คืนค่า success/error เราจึงต้องถือว่าส่งสำเร็จ
-      alert('✅ ส่งข้อมูลการเข้าเรียนเรียบร้อยแล้ว!\n(โปรดตรวจสอบความถูกต้องใน Google Sheets อีกครั้ง)');
+      alert('✅ ส่งข้อมูลการเข้าเรียนรายสัปดาห์เรียบร้อยแล้ว!\n(โปรดตรวจสอบความถูกต้องใน Google Sheets อีกครั้ง)');
+      setLoadedKey('');
       setTimeout(() => loadAllData(sheetId), 1500);
     } catch (error) {
       console.error('Save Error:', error);
@@ -820,19 +926,25 @@ export default function ClassroomManager() {
                   <div className="glass-card rounded-[2rem] p-12 text-center flex flex-col items-center justify-center border-dashed border-2 border-slate-300/50 bg-white/40">
                     <Users size={48} className="text-indigo-300 mb-4" />
                     <h3 className="text-lg font-bold text-slate-700">กรุณาเลือกชั้นเรียนที่แถบด้านบน</h3>
-                    <p className="text-sm text-slate-500 mt-1">เพื่อเริ่มทำการเช็คชื่อประจำวัน</p>
+                    <p className="text-sm text-slate-500 mt-1">เพื่อเริ่มทำการเช็คชื่อ</p>
+                  </div>
+                ) : !formData.subject ? (
+                  <div className="glass-card rounded-[2rem] p-12 text-center flex flex-col items-center justify-center border-dashed border-2 border-slate-300/50 bg-white/40">
+                    <BookOpen size={48} className="text-indigo-300 mb-4" />
+                    <h3 className="text-lg font-bold text-slate-700">กรุณาเลือกรายวิชาด้านบน</h3>
+                    <p className="text-sm text-slate-500 mt-1">เพื่อเปิดตารางเช็คชื่อเข้าเรียนประจำสัปดาห์</p>
                   </div>
                 ) : (
                   <>
                     <div className="glass-card rounded-[2rem] p-6 flex flex-col gap-4 shadow-sm">
                       {pastAttendanceOptions.length > 0 && (
                         <div className="w-full pb-4 border-b border-slate-100">
-                          <label className="block text-xs font-semibold text-indigo-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Edit3 size={14}/> เลือกข้อมูลเดิมเพื่อแก้ไข</label>
+                          <label className="block text-xs font-semibold text-indigo-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Edit3 size={14}/> เลือกสัปดาห์เดิมเพื่อแก้ไข</label>
                           <select onChange={(e) => handleLoadPastAttendance(e.target.value)} className="w-full px-4 py-3 bg-indigo-50/50 border border-indigo-100 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-medium text-indigo-700 cursor-pointer transition-colors hover:bg-indigo-50">
-                            <option value="">-- สร้างการเช็คชื่อใหม่ --</option>
+                            <option value="">-- สร้างการเช็คชื่อสัปดาห์ใหม่ --</option>
                             {pastAttendanceOptions.map((opt, i) => (
-                              <option key={i} value={`${opt.date}|${opt.subject}`}>
-                                วันที่ {opt.date} - วิชา {opt.subject}
+                              <option key={i} value={`${opt.mondayStr}|${opt.subject}`}>
+                                สัปดาห์วันที่ {formatThaiDate(opt.mondayStr)} - วิชา {opt.subject}
                               </option>
                             ))}
                           </select>
@@ -841,7 +953,7 @@ export default function ClassroomManager() {
                       
                       <div className="flex flex-col md:flex-row gap-4 items-end w-full">
                         <div className="flex-1 w-full">
-                          <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Calendar size={14}/> วันที่เช็คชื่อ</label>
+                          <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Calendar size={14}/> เลือกวันที่ในสัปดาห์</label>
                           <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="w-full px-4 py-3 bg-white/60 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium text-slate-700" />
                         </div>
                         {subjectList.length > 0 ? (
@@ -858,51 +970,135 @@ export default function ClassroomManager() {
 
                     {activeClassStudents.length > 0 && (
                       <div className="glass-card rounded-[2rem] overflow-hidden shadow-lg shadow-slate-200/50">
-                        <div className="p-6 md:p-8 border-b border-slate-100/50 bg-white/40 flex justify-between items-center">
+                        <div className="p-6 md:p-8 border-b border-slate-100/50 bg-white/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                           <div>
-                            <h2 className="text-xl font-bold text-slate-800">เช็คชื่อห้อง {globalClass}</h2>
+                            <h2 className="text-xl font-bold text-slate-800">เช็คชื่อเข้าเรียนห้อง {globalClass}</h2>
+                            <p className="text-xs font-semibold text-slate-500 mt-1">
+                              ประจำสัปดาห์: {formatThaiDate(mondayStr)} ถึง {formatThaiDate(weekdays[4])}
+                            </p>
                           </div>
-                          <div className="flex gap-3">
-                            <button onClick={exportAttendanceExcel} className="bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl hover:bg-emerald-100 font-bold text-sm shadow-sm border border-emerald-100 flex items-center gap-2 transition-all">
-                              <Download size={18} /> ส่งออก Excel
-                            </button>
-                            <button onClick={handleSaveBulkAttendance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl hover:bg-indigo-700 font-medium flex items-center gap-2">
-                              <Save size={18} /> บันทึก
-                            </button>
+                          
+                          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+                            <div className="flex gap-2 items-center bg-white/60 px-3 py-1.5 rounded-xl border border-slate-100 text-xs text-slate-500 shadow-sm">
+                              <span className="font-semibold text-slate-600">คำอธิบาย:</span>
+                              <span className="flex items-center gap-1"><span className="w-4.5 h-4.5 rounded-md bg-emerald-500 inline-flex items-center justify-center text-white text-[10px] font-bold">✓</span> มา</span>
+                              <span className="flex items-center gap-1"><span className="w-4.5 h-4.5 rounded-md bg-rose-500 inline-flex items-center justify-center text-white text-[10px] font-bold">✗</span> ขาด</span>
+                              <span className="flex items-center gap-1"><span className="w-4.5 h-4.5 rounded-md bg-amber-500 inline-flex items-center justify-center text-white text-[10px] font-bold">⏰</span> สาย</span>
+                            </div>
+                            
+                            <div className="flex gap-2">
+                              <button onClick={exportAttendanceExcel} className="bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl hover:bg-emerald-100 font-bold text-sm shadow-sm border border-emerald-100 flex items-center gap-2 transition-all">
+                                <Download size={18} /> ส่งออก Excel
+                              </button>
+                              <button onClick={handleSaveBulkAttendance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl hover:bg-indigo-700 font-medium flex items-center gap-2">
+                                <Save size={18} /> บันทึกสัปดาห์นี้
+                              </button>
+                            </div>
                           </div>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-left border-collapse">
                             <thead>
                               <tr className="bg-slate-50/50 text-xs uppercase tracking-wider text-slate-400">
-                                <th className="px-6 py-4">เลขที่</th>
-                                <th className="px-6 py-4">ชื่อ</th>
-                                <th className="px-6 py-4 text-center">สถานะ</th>
+                                <th className="px-6 py-4 font-bold">เลขที่</th>
+                                <th className="px-6 py-4 font-bold">ชื่อ</th>
+                                <th className="px-6 py-4 font-bold">นามสกุล</th>
+                                
+                                <th className="px-4 py-4 text-center bg-yellow-100/60 text-yellow-800 border-b border-yellow-200 min-w-[120px]">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span>จ</span>
+                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[0])}</span>
+                                    <button onClick={() => handleMarkAllDayPresent(weekdays[0])} className="mt-1 px-2 py-0.5 bg-yellow-50 text-yellow-700 hover:bg-yellow-200 border border-yellow-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
+                                  </div>
+                                </th>
+                                
+                                <th className="px-4 py-4 text-center bg-pink-100/60 text-pink-800 border-b border-pink-200 min-w-[120px]">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span>อ</span>
+                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[1])}</span>
+                                    <button onClick={() => handleMarkAllDayPresent(weekdays[1])} className="mt-1 px-2 py-0.5 bg-pink-50 text-pink-700 hover:bg-pink-200 border border-pink-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
+                                  </div>
+                                </th>
+                                
+                                <th className="px-4 py-4 text-center bg-emerald-100/60 text-emerald-800 border-b border-emerald-200 min-w-[120px]">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span>พ</span>
+                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[2])}</span>
+                                    <button onClick={() => handleMarkAllDayPresent(weekdays[2])} className="mt-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-200 border border-emerald-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
+                                  </div>
+                                </th>
+                                
+                                <th className="px-4 py-4 text-center bg-purple-100/60 text-purple-800 border-b border-purple-200 min-w-[120px]">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span>พฤ</span>
+                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[3])}</span>
+                                    <button onClick={() => handleMarkAllDayPresent(weekdays[3])} className="mt-1 px-2 py-0.5 bg-purple-50 text-purple-700 hover:bg-purple-200 border border-purple-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
+                                  </div>
+                                </th>
+                                
+                                <th className="px-4 py-4 text-center bg-cyan-100/60 text-cyan-800 border-b border-cyan-200 min-w-[120px]">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span>ศ</span>
+                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[4])}</span>
+                                    <button onClick={() => handleMarkAllDayPresent(weekdays[4])} className="mt-1 px-2 py-0.5 bg-cyan-50 text-cyan-700 hover:bg-cyan-200 border border-cyan-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
+                                  </div>
+                                </th>
+                                
+                                <th className="px-6 py-4 text-center bg-amber-200 text-amber-900 border-b border-amber-300 font-bold min-w-[80px]">รวม</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100/50">
-                              {activeClassStudents.map((student, idx) => (
-                                <tr key={idx} className="hover:bg-white/40">
-                                  <td className="px-6 py-4 text-sm text-slate-500">{student.studentId}</td>
-                                  <td className="px-6 py-4 text-sm font-medium text-slate-700">{student.name}</td>
-                                  <td className="px-6 py-4">
-                                    <div className="flex justify-center gap-2">
-                                      {['present', 'absent', 'late'].map((s) => (
-                                        <label key={s} className={`cursor-pointer px-4 py-2 rounded-full text-xs font-semibold border ${getAttendanceStatus(student.name) === s ? (s === 'present' ? 'bg-emerald-500 text-white border-emerald-500' : s === 'absent' ? 'bg-rose-500 text-white border-rose-500' : 'bg-amber-500 text-white border-amber-500') : 'bg-white text-slate-500'}`}>
-                                          <input type="radio" className="hidden" checked={getAttendanceStatus(student.name) === s} onChange={() => handleStatusChange(student.name, s)} />
-                                          {s === 'present' ? 'มา' : s === 'absent' ? 'ขาด' : 'สาย'}
-                                        </label>
-                                      ))}
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
+                              {activeClassStudents.map((student, idx) => {
+                                const { firstName, lastName } = splitName(student.name);
+                                
+                                let totalPresent = 0;
+                                weekdays.forEach(dateStr => {
+                                  const status = getAttendanceStatus(student.name, dateStr);
+                                  if (status === 'present' || status === 'late') {
+                                    totalPresent += 1;
+                                  }
+                                });
+
+                                return (
+                                  <tr key={idx} className="hover:bg-white/40">
+                                    <td className="px-6 py-4 text-sm text-slate-500 font-semibold">{student.studentId}</td>
+                                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">{firstName}</td>
+                                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">{lastName}</td>
+                                    {weekdays.map((dateStr, dIdx) => {
+                                      const status = getAttendanceStatus(student.name, dateStr);
+                                      return (
+                                        <td key={dIdx} className="px-4 py-4 text-center">
+                                          <button 
+                                            type="button"
+                                            onClick={() => toggleAttendanceStatus(student.name, dateStr)}
+                                            className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto transition-all transform hover:scale-105 active:scale-95 shadow-2xs border ${
+                                              status === 'present' 
+                                                ? 'bg-emerald-500 border-emerald-600 text-white shadow-emerald-100' 
+                                                : status === 'absent' 
+                                                  ? 'bg-rose-500 border-rose-600 text-white shadow-rose-100' 
+                                                  : 'bg-amber-500 border-amber-600 text-white shadow-amber-100'
+                                            }`}
+                                          >
+                                            {status === 'present' && <CheckCircle size={18} />}
+                                            {status === 'absent' && <AlertCircle size={18} />}
+                                            {status === 'late' && <Clock size={18} />}
+                                          </button>
+                                        </td>
+                                      );
+                                    })}
+                                    <td className="px-6 py-4 text-center font-extrabold text-sm text-amber-900 bg-amber-500/10 border-l border-slate-100">
+                                      {totalPresent}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
                       </div>
                     )}
                   </>
+
                 )}
               </div>
             )}
