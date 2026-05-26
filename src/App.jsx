@@ -299,7 +299,11 @@ const TimetableGrid = ({ subjectList, onCellClick }) => {
                   {/* Periods Cells */}
                   {TIMETABLE_PERIODS.map((period, pIdx) => {
                     if (period.number === 'break') {
-                      return null;
+                      return (
+                        <td key={pIdx} className="p-2 border-r border-slate-200 bg-amber-50/10 text-amber-800/30 text-xs font-bold select-none">
+                          
+                        </td>
+                      );
                     }
                     
                     const slot = rowSchedule[period.number];
