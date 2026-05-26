@@ -398,6 +398,18 @@ export default function ClassroomManager() {
   const [weeklyAttendance, setWeeklyAttendance] = useState({});
   const [loadedKey, setLoadedKey] = useState('');
   const [timetableAlert, setTimetableAlert] = useState({ isOpen: false, subject: '', className: '' });
+  const [excludedDates, setExcludedDates] = useState([]);
+
+  const toggleDateExclusion = useCallback((dateStr) => {
+    setExcludedDates(prev => {
+      if (prev.includes(dateStr)) {
+        return prev.filter(d => d !== dateStr);
+      } else {
+        return [...prev, dateStr];
+      }
+    });
+  }, []);
+
 
 
 
@@ -723,6 +735,7 @@ export default function ClassroomManager() {
     if (globalClass === 'all' || !formData.subject || !selectedDate) {
       timerId = setTimeout(() => {
         setWeeklyAttendance({});
+        setExcludedDates([]);
         setLoadedKey('');
       }, 0);
     } else if (loadedKey !== currentKey) {
@@ -738,8 +751,26 @@ export default function ClassroomManager() {
           newWeeklyAtt[student.name][dateStr] = record ? record.status : 'present';
         });
       });
+
+      // Check if there are any saved records for this subject in the active grid dates
+      const hasAnySavedRecords = filteredAttendanceHistory.some(r => 
+        r.subject === formData.subject && 
+        activeGridDates.includes(r.date)
+      );
+
+      let initialExcluded = [];
+      if (hasAnySavedRecords) {
+        initialExcluded = activeGridDates.filter(dateStr => 
+          !filteredAttendanceHistory.some(r => 
+            r.subject === formData.subject && 
+            r.date === dateStr
+          )
+        );
+      }
+
       timerId = setTimeout(() => {
         setWeeklyAttendance(newWeeklyAtt);
+        setExcludedDates(initialExcluded);
         setLoadedKey(currentKey);
       }, 0);
     }
@@ -858,9 +889,10 @@ export default function ClassroomManager() {
     try {
       const validStudents = activeClassStudents.filter(s => s.name && String(s.name).trim().length > 1);
       
+      const datesToSave = activeGridDates.filter(d => !excludedDates.includes(d));
       const payloadData = [];
       validStudents.forEach(student => {
-        activeGridDates.forEach(dateStr => {
+        datesToSave.forEach(dateStr => {
           const status = getAttendanceStatus(student.name, dateStr);
           payloadData.push(createAttendancePayloadRow({
             student,
@@ -874,10 +906,10 @@ export default function ClassroomManager() {
 
       if (payloadData.length === 0) {
         setIsSaving(false);
-        return alert('❌ ไม่พบรายชื่อนักเรียนที่จะบันทึก (โปรดเลือกห้องเรียนและวิชา)');
+        return alert('❌ ไม่พบรายชื่อนักเรียนหรือวันที่ที่จะบันทึก (โปรดมั่นใจว่าไม่ได้เลือกข้ามทุกวัน)');
       }
 
-      const confirmMsg = `ยืนยันบันทึกข้อมูลการเช็คชื่อเข้าเรียน\nห้อง: ${globalClass}\nวิชา: ${formData.subject}\nประจำเดือน: ${thaiMonthName(activeMonthIndex)} ${activeYear + 543} (จำนวน ${activeGridDates.length} วันสอน)\nจำนวนนักเรียน: ${validStudents.length} คน (รวมทั้งหมด ${payloadData.length} แถว)\n\nต้องการดำเนินการต่อหรือไม่?`;
+      const confirmMsg = `ยืนยันบันทึกข้อมูลการเช็คชื่อเข้าเรียน\nห้อง: ${globalClass}\nวิชา: ${formData.subject}\nประจำเดือน: ${thaiMonthName(activeMonthIndex)} ${activeYear + 543} (จำนวน ${datesToSave.length} วันสอนจากทั้งหมด ${activeGridDates.length} วัน)\nจำนวนนักเรียน: ${validStudents.length} คน (รวมทั้งหมด ${payloadData.length} แถว)\n\nต้องการดำเนินการต่อหรือไม่?`;
       
       if (!window.confirm(confirmMsg)) {
         setIsSaving(false);
@@ -1388,6 +1420,7 @@ export default function ClassroomManager() {
                                   const dateObj = new Date(dateStr);
                                   const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
                                   const dayName = dayNames[dateObj.getDay()];
+                                  const isExcluded = excludedDates.includes(dateStr);
                                   
                                   const dayColors = {
                                     0: 'bg-rose-100/60 text-rose-800 border-b border-rose-200',      // Sunday
@@ -1398,16 +1431,33 @@ export default function ClassroomManager() {
                                     5: 'bg-cyan-100/60 text-cyan-800 border-b border-cyan-200',     // Friday
                                     6: 'bg-slate-100/60 text-slate-800 border-b border-slate-200',   // Saturday
                                   };
-                                  const colorClass = dayColors[dateObj.getDay()] || 'bg-slate-100/60 text-slate-800 border-b border-slate-200';
+                                  let colorClass = dayColors[dateObj.getDay()] || 'bg-slate-100/60 text-slate-800 border-b border-slate-200';
+                                  if (isExcluded) {
+                                    colorClass = 'bg-slate-100/30 text-slate-400 border-b border-slate-200/50';
+                                  }
                                   
                                   return (
-                                    <th key={dIdx} className={`px-4 py-4 text-center min-w-[120px] ${colorClass}`}>
+                                    <th key={dIdx} className={`px-4 py-3 text-center min-w-[120px] transition-all ${isExcluded ? 'opacity-40' : ''} ${colorClass}`}>
                                       <div className="flex flex-col items-center gap-1">
+                                        <label className="flex items-center gap-1 cursor-pointer select-none mb-1 text-[10px] text-slate-500 font-bold hover:text-slate-700">
+                                          <input 
+                                            type="checkbox" 
+                                            checked={!isExcluded} 
+                                            onChange={() => toggleDateExclusion(dateStr)} 
+                                            className="w-3.5 h-3.5 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500/20 cursor-pointer"
+                                          />
+                                          เช็คชื่อ
+                                        </label>
                                         <span className="font-extrabold text-sm">{dayName}</span>
                                         <span className="text-[10px] opacity-75 font-semibold">{formatHeaderDate(dateStr)}</span>
                                         <button 
-                                          onClick={() => handleMarkAllDayPresent(dateStr)} 
-                                          className="mt-1 px-2 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-[10px] font-bold transition-all shadow-3xs"
+                                          onClick={() => !isExcluded && handleMarkAllDayPresent(dateStr)} 
+                                          disabled={isExcluded}
+                                          className={`mt-1 px-2 py-0.5 rounded text-[10px] font-bold transition-all shadow-3xs ${
+                                            isExcluded 
+                                              ? 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed' 
+                                              : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
+                                          }`}
                                         >
                                           มาทุกคน
                                         </button>
@@ -1416,7 +1466,7 @@ export default function ClassroomManager() {
                                   );
                                 })}
                                 
-                                <th className="px-6 py-4 text-center bg-amber-200 text-amber-900 border-b border-amber-300 font-bold min-w-[80px]">รวม ({activeGridDates.length} วัน)</th>
+                                <th className="px-6 py-4 text-center bg-amber-200 text-amber-900 border-b border-amber-300 font-bold min-w-[80px]">รวม ({activeGridDates.filter(d => !excludedDates.includes(d)).length} วัน)</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100/50">
@@ -1424,7 +1474,8 @@ export default function ClassroomManager() {
                                 const { firstName, lastName } = splitName(student.name);
                                 
                                 let totalPresent = 0;
-                                activeGridDates.forEach(dateStr => {
+                                const includedDates = activeGridDates.filter(d => !excludedDates.includes(d));
+                                includedDates.forEach(dateStr => {
                                   const status = getAttendanceStatus(student.name, dateStr);
                                   if (status === 'present' || status === 'late') {
                                     totalPresent += 1;
@@ -1437,23 +1488,35 @@ export default function ClassroomManager() {
                                     <td className="px-6 py-4 text-sm font-semibold text-slate-700">{firstName}</td>
                                     <td className="px-6 py-4 text-sm font-semibold text-slate-700">{lastName}</td>
                                     {activeGridDates.map((dateStr, dIdx) => {
+                                      const isExcluded = excludedDates.includes(dateStr);
                                       const status = getAttendanceStatus(student.name, dateStr);
                                       return (
-                                        <td key={dIdx} className="px-4 py-4 text-center">
+                                        <td key={dIdx} className={`px-4 py-4 text-center transition-all ${isExcluded ? 'opacity-30' : ''}`}>
                                           <button 
                                             type="button"
-                                            onClick={() => toggleAttendanceStatus(student.name, dateStr)}
-                                            className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto transition-all transform hover:scale-105 active:scale-95 shadow-2xs border ${
-                                              status === 'present' 
-                                                ? 'bg-emerald-500 border-emerald-600 text-white shadow-emerald-100' 
-                                                : status === 'absent' 
-                                                  ? 'bg-rose-500 border-rose-600 text-white shadow-rose-100' 
-                                                  : 'bg-amber-500 border-amber-600 text-white shadow-amber-100'
+                                            onClick={() => !isExcluded && toggleAttendanceStatus(student.name, dateStr)}
+                                            disabled={isExcluded}
+                                            className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto transition-all transform border ${
+                                              isExcluded
+                                                ? 'bg-slate-100 border-slate-200/60 text-slate-300 cursor-not-allowed shadow-none'
+                                                : `hover:scale-105 active:scale-95 shadow-2xs ${
+                                                    status === 'present' 
+                                                      ? 'bg-emerald-500 border-emerald-600 text-white shadow-emerald-100' 
+                                                      : status === 'absent' 
+                                                        ? 'bg-rose-500 border-rose-600 text-white shadow-rose-100' 
+                                                        : 'bg-amber-500 border-amber-600 text-white shadow-amber-100'
+                                                  }`
                                             }`}
                                           >
-                                            {status === 'present' && <CheckCircle size={18} />}
-                                            {status === 'absent' && <AlertCircle size={18} />}
-                                            {status === 'late' && <Clock size={18} />}
+                                            {isExcluded ? (
+                                              <span className="text-xs font-bold text-slate-300">-</span>
+                                            ) : (
+                                              <>
+                                                {status === 'present' && <CheckCircle size={18} />}
+                                                {status === 'absent' && <AlertCircle size={18} />}
+                                                {status === 'late' && <Clock size={18} />}
+                                              </>
+                                            )}
                                           </button>
                                         </td>
                                       );
