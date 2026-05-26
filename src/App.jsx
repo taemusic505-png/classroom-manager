@@ -943,15 +943,9 @@ export default function ClassroomManager() {
                     <h3 className="text-lg font-bold text-slate-700">กรุณาเลือกชั้นเรียนที่แถบด้านบน</h3>
                     <p className="text-sm text-slate-500 mt-1">เพื่อเริ่มทำการเช็คชื่อ</p>
                   </div>
-                ) : !formData.subject ? (
-                  <div className="glass-card rounded-[2rem] p-12 text-center flex flex-col items-center justify-center border-dashed border-2 border-slate-300/50 bg-white/40">
-                    <BookOpen size={48} className="text-indigo-300 mb-4" />
-                    <h3 className="text-lg font-bold text-slate-700">กรุณาเลือกรายวิชาด้านบน</h3>
-                    <p className="text-sm text-slate-500 mt-1">เพื่อเปิดตารางเช็คชื่อเข้าเรียนประจำสัปดาห์</p>
-                  </div>
                 ) : (
                   <>
-                    <div className="glass-card rounded-[2rem] p-6 flex flex-col gap-4 shadow-sm">
+                    <div className="glass-card rounded-[2rem] p-6 flex flex-col gap-4 shadow-sm mb-8">
                       {pastAttendanceOptions.length > 0 && (
                         <div className="w-full pb-4 border-b border-slate-100">
                           <label className="block text-xs font-semibold text-indigo-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Edit3 size={14}/> เลือกสัปดาห์เดิมเพื่อแก้ไข</label>
@@ -983,7 +977,13 @@ export default function ClassroomManager() {
                       </div>
                     </div>
 
-                    {activeClassStudents.length > 0 && (
+                    {!formData.subject ? (
+                      <div className="glass-card rounded-[2rem] p-12 text-center flex flex-col items-center justify-center border-dashed border-2 border-slate-300/50 bg-white/40 animate-fade-in-up">
+                        <BookOpen size={48} className="text-indigo-300 mb-4 animate-bounce" />
+                        <h3 className="text-lg font-bold text-slate-700">กรุณาเลือกรายวิชาในกล่องด้านบน</h3>
+                        <p className="text-sm text-slate-500 mt-1">เพื่อเปิดตารางเช็คชื่อเข้าเรียนประจำสัปดาห์</p>
+                      </div>
+                    ) : activeClassStudents.length > 0 && (
                       <div className="glass-card rounded-[2rem] overflow-hidden shadow-lg shadow-slate-200/50">
                         <div className="p-6 md:p-8 border-b border-slate-100/50 bg-white/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                           <div>
