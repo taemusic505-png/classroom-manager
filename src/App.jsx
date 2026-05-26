@@ -48,6 +48,16 @@ const createAttendancePayloadRow = ({ student, subject, date, status, className 
   ...createSheetFieldAliases(status, ['Status', 'status', 'สถานะ'])
 });
 
+const createAssignmentPayloadRow = ({ student, subject, assignment, dueDate, status, className }) => ({
+  ...createSheetFieldAliases(student.name, ['Name', 'name', 'Student Name', 'StudentName', 'ชื่อนักเรียน', 'ชื่อ', 'ชื่อ-สกุล', 'ชื่อ-นามสกุล', 'ชื่อ - สกุล']),
+  ...createSheetFieldAliases(student.studentId, ['StudentID', 'studentId', 'Student ID', 'เลขที่', 'รหัสนักเรียน']),
+  ...createSheetFieldAliases(className, ['Class', 'className', 'ClassName', 'ชั้นเรียน', 'ชั้น', 'ห้อง']),
+  ...createSheetFieldAliases(subject, ['Subject', 'subject', 'วิชา', 'รายวิชา']),
+  ...createSheetFieldAliases(assignment, ['Assignment', 'assignment', 'ชื่องาน', 'งาน']),
+  ...createSheetFieldAliases(dueDate, ['DueDate', 'dueDate', 'Due Date', 'กำหนดส่ง', 'วันส่ง']),
+  ...createSheetFieldAliases(status, ['Status', 'status', 'สถานะ'])
+});
+
 
 const getMonday = (d) => {
   const date = new Date(d);
@@ -315,32 +325,6 @@ export default function ClassroomManager() {
   const getAttendanceStatus = (name, date) => weeklyAttendance[name]?.[date] || 'present';
   const getAssignmentStatus = (name) => assignStatusList[name] || 'pending';
 
-  // Load weekly attendance when currentKey or history changes
-  useEffect(() => {
-    if (globalClass === 'all' || !formData.subject || !mondayStr) {
-      setWeeklyAttendance({});
-      setLoadedKey('');
-      return;
-    }
-
-    if (loadedKey !== currentKey) {
-      const newWeeklyAtt = {};
-      activeClassStudents.forEach(student => {
-        newWeeklyAtt[student.name] = {};
-        weekdays.forEach(dateStr => {
-          const record = filteredAttendanceHistory.find(r => 
-            r.name === student.name && 
-            r.subject === formData.subject && 
-            r.date === dateStr
-          );
-          newWeeklyAtt[student.name][dateStr] = record ? record.status : 'present';
-        });
-      });
-      setWeeklyAttendance(newWeeklyAtt);
-      setLoadedKey(currentKey);
-    }
-  }, [currentKey, activeClassStudents, weekdays, filteredAttendanceHistory, loadedKey, globalClass, formData.subject, mondayStr]);
-
   // Normalized Histories
   const normalizedAttendanceHistory = useMemo(() => {
     return attendanceData.map(row => {
@@ -385,6 +369,37 @@ export default function ClassroomManager() {
     return options.sort((a, b) => new Date(b.mondayStr) - new Date(a.mondayStr));
   }, [filteredAttendanceHistory]);
 
+  // Load weekly attendance when currentKey or history changes
+  useEffect(() => {
+    let timerId;
+    if (globalClass === 'all' || !formData.subject || !mondayStr) {
+      timerId = setTimeout(() => {
+        setWeeklyAttendance({});
+        setLoadedKey('');
+      }, 0);
+    } else if (loadedKey !== currentKey) {
+      const newWeeklyAtt = {};
+      activeClassStudents.forEach(student => {
+        newWeeklyAtt[student.name] = {};
+        weekdays.forEach(dateStr => {
+          const record = filteredAttendanceHistory.find(r => 
+            r.name === student.name && 
+            r.subject === formData.subject && 
+            r.date === dateStr
+          );
+          newWeeklyAtt[student.name][dateStr] = record ? record.status : 'present';
+        });
+      });
+      timerId = setTimeout(() => {
+        setWeeklyAttendance(newWeeklyAtt);
+        setLoadedKey(currentKey);
+      }, 0);
+    }
+    return () => {
+      if (timerId) clearTimeout(timerId);
+    };
+  }, [currentKey, activeClassStudents, weekdays, filteredAttendanceHistory, loadedKey, globalClass, formData.subject, mondayStr]);
+
   // Options for past assignments
   const pastAssignmentOptions = useMemo(() => {
     const options = [];
@@ -413,7 +428,7 @@ export default function ClassroomManager() {
 
   const toggleAttendanceStatus = (name, date) => {
     const currentStatus = getAttendanceStatus(name, date);
-    let nextStatus = 'present';
+    let nextStatus;
     if (currentStatus === 'present') {
       nextStatus = 'absent';
     } else if (currentStatus === 'absent') {
