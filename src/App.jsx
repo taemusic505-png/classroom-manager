@@ -550,6 +550,15 @@ export default function ClassroomManager() {
     return [...new Set(subjectsData.map(normalizeRow).map(s => s.subject).filter(s => s !== '-'))];
   }, [subjectsData]);
 
+  const filteredSubjectList = useMemo(() => {
+    if (globalClass === 'all') return subjectList;
+    return subjectList.filter(sub => {
+      if (sub.includes(globalClass)) return true;
+      const hasOtherClass = classList.some(c => c !== globalClass && sub.includes(c));
+      return !hasOtherClass;
+    });
+  }, [subjectList, globalClass, classList]);
+
   const handleTimetableCellClick = useCallback((dayName, slotInfo) => {
     const dayOffsets = {
       'จันทร์': 0,
@@ -586,6 +595,7 @@ export default function ClassroomManager() {
         className: targetClass
       });
     }
+    setAssignForm(prev => ({ ...prev, subject: '' }));
   }, [selectedDate, subjectList]);
 
   const activeYear = useMemo(() => {
@@ -678,6 +688,8 @@ export default function ClassroomManager() {
     const students = className === 'all' ? [] : normalizedStudents.filter(s => s.className === className);
     const { initialAssign } = createInitialStatusLists(students);
     setAssignStatusList(initialAssign);
+    setFormData(prev => ({ ...prev, subject: '' }));
+    setAssignForm(prev => ({ ...prev, subject: '' }));
     setLoadedKey(''); // Force reload weekly attendance
   };
 
@@ -1352,12 +1364,12 @@ export default function ClassroomManager() {
                           <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Calendar size={14}/> เลือกวันที่ในสัปดาห์</label>
                           <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="w-full px-4 py-3 bg-white/60 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium text-slate-700" />
                         </div>
-                        {subjectList.length > 0 ? (
+                        {filteredSubjectList.length > 0 ? (
                           <div className="flex-1 w-full">
                             <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-1"><BookOpen size={14}/> วิชา</label>
                             <select value={formData.subject} onChange={(e) => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-3 bg-white/60 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-medium text-slate-700">
                               <option value="" disabled>เลือกวิชา...</option>
-                              {subjectList.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                              {filteredSubjectList.map(sub => <option key={sub} value={sub}>{sub}</option>)}
                             </select>
                           </div>
                         ) : (<div className="flex-1 w-full text-sm text-slate-500 bg-white/40 p-3 rounded-xl border border-dashed text-center">ไม่มีข้อมูลวิชา</div>)}
@@ -1386,7 +1398,7 @@ export default function ClassroomManager() {
                               <span className="text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded font-extrabold">{thaiMonthName(activeMonthIndex)} {activeYear + 543}</span>
                               <span className="text-slate-300">|</span>
                               <span>จำนวนวันเรียนทั้งหมด:</span>
-                              <span className="text-slate-700 font-extrabold">{activeGridDates.length} วันทำการ</span>
+                              <span className="text-slate-700 font-extrabold">{activeGridDates.filter(d => !excludedDates.includes(d)).length} วันทำการ</span>
                             </p>
                           </div>
                           
@@ -1590,7 +1602,7 @@ export default function ClassroomManager() {
                           <label className="block text-xs font-semibold text-slate-500 mb-2">วิชา</label>
                           <select value={assignForm.subject} onChange={(e) => setAssignForm({...assignForm, subject: e.target.value})} className="w-full px-4 py-3 bg-white/60 border rounded-xl">
                             <option value="" disabled>เลือกวิชา...</option>
-                            {subjectList.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                            {filteredSubjectList.map(sub => <option key={sub} value={sub}>{sub}</option>)}
                           </select>
                         </div>
                       </div>
