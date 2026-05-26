@@ -66,6 +66,14 @@ const getMonday = (d) => {
   return new Date(date.setDate(diff));
 };
 
+const toLocalDateString = (d) => {
+  const date = new Date(d);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 
 
 const thaiMonthName = (monthIdx) => {
@@ -385,7 +393,7 @@ export default function ClassroomManager() {
   const [isSaving, setIsSaving] = useState(false);
   
   // ---------------- ATTENDANCE STATES ----------------
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(toLocalDateString(new Date()));
   const [formData, setFormData] = useState({ subject: '' });
   const [weeklyAttendance, setWeeklyAttendance] = useState({});
   const [loadedKey, setLoadedKey] = useState('');
@@ -395,7 +403,7 @@ export default function ClassroomManager() {
 
 
   // ---------------- ASSIGNMENT STATES ----------------
-  const [assignForm, setAssignForm] = useState({ subject: '', name: '', dueDate: new Date().toISOString().split('T')[0] });
+  const [assignForm, setAssignForm] = useState({ subject: '', name: '', dueDate: toLocalDateString(new Date()) });
   const [assignStatusList, setAssignStatusList] = useState({});
 
   // ---------------- SUMMARY STATES ----------------
@@ -545,7 +553,7 @@ export default function ClassroomManager() {
     const currentMonday = getMonday(currentRefDate);
     const targetDate = new Date(currentMonday);
     targetDate.setDate(currentMonday.getDate() + offset);
-    const targetDateStr = targetDate.toISOString().split('T')[0];
+    const targetDateStr = toLocalDateString(targetDate);
     
     setSelectedDate(targetDateStr);
     
@@ -607,7 +615,7 @@ export default function ClassroomManager() {
       date.setDate(date.getDate() + 1);
     }
     while (date.getMonth() === monthIndex) {
-      dates.push(date.toISOString().split('T')[0]);
+      dates.push(toLocalDateString(date));
       date.setDate(date.getDate() + 7);
     }
     return dates;
@@ -797,7 +805,7 @@ export default function ClassroomManager() {
 
   const handleLoadPastAttendance = (val) => {
     if (!val) {
-      setSelectedDate(new Date().toISOString().split('T')[0]);
+      setSelectedDate(toLocalDateString(new Date()));
       setFormData({ subject: '' });
       setLoadedKey('');
       return;
@@ -810,7 +818,7 @@ export default function ClassroomManager() {
 
   const handleLoadPastAssignment = (val) => {
     if (!val) {
-      setAssignForm({ subject: '', name: '', dueDate: new Date().toISOString().split('T')[0] });
+      setAssignForm({ subject: '', name: '', dueDate: toLocalDateString(new Date()) });
       const initialAssign = {};
       activeClassStudents.forEach(s => initialAssign[s.name] = 'pending');
       setAssignStatusList(initialAssign);
