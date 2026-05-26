@@ -66,26 +66,13 @@ const getMonday = (d) => {
   return new Date(date.setDate(diff));
 };
 
-const getWeekDays = (mondayDate) => {
-  const days = [];
-  const base = new Date(mondayDate);
-  for (let i = 0; i < 5; i++) {
-    const d = new Date(base);
-    d.setDate(base.getDate() + i);
-    days.push(d.toISOString().split('T')[0]);
-  }
-  return days;
+
+
+const thaiMonthName = (monthIdx) => {
+  const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  return months[monthIdx] || '';
 };
 
-const formatThaiDate = (dateStr) => {
-  if (!dateStr || dateStr === '-') return '-';
-  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-  const d = new Date(dateStr);
-  const day = d.getDate();
-  const month = months[d.getMonth()];
-  const year = d.getFullYear() + 543;
-  return `${day} ${month} ${year}`;
-};
 
 const formatHeaderDate = (dateStr) => {
   if (!dateStr || dateStr === '-') return '';
@@ -405,17 +392,7 @@ export default function ClassroomManager() {
   const [timetableAlert, setTimetableAlert] = useState({ isOpen: false, subject: '', className: '' });
 
 
-  const mondayStr = useMemo(() => {
-    if (!selectedDate) return '';
-    return getMonday(new Date(selectedDate)).toISOString().split('T')[0];
-  }, [selectedDate]);
 
-  const weekdays = useMemo(() => {
-    if (!mondayStr) return [];
-    return getWeekDays(new Date(mondayStr));
-  }, [mondayStr]);
-
-  const currentKey = `${globalClass}|${formData.subject}|${mondayStr}`;
 
   // ---------------- ASSIGNMENT STATES ----------------
   const [assignForm, setAssignForm] = useState({ subject: '', name: '', dueDate: new Date().toISOString().split('T')[0] });
@@ -591,6 +568,68 @@ export default function ClassroomManager() {
     }
   }, [selectedDate, subjectList]);
 
+  const activeYear = useMemo(() => {
+    if (!selectedDate) return new Date().getFullYear();
+    return new Date(selectedDate).getFullYear();
+  }, [selectedDate]);
+
+  const activeMonthIndex = useMemo(() => {
+    if (!selectedDate) return new Date().getMonth();
+    return new Date(selectedDate).getMonth();
+  }, [selectedDate]);
+
+  const teachingDays = useMemo(() => {
+    if (globalClass === 'all' || !formData.subject) return [];
+    
+    const dayNames = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+    const matchedDays = [];
+    
+    for (const [dayName, daySchedule] of Object.entries(SCHEDULE)) {
+      for (const slot of Object.values(daySchedule)) {
+        if (slot.class === globalClass) {
+          const resolved = resolveSubjectFromTimetable(slot.subject, slot.class, subjectList);
+          if (resolved === formData.subject) {
+            const dayIdx = dayNames.indexOf(dayName);
+            if (dayIdx !== -1 && !matchedDays.includes(dayIdx)) {
+              matchedDays.push(dayIdx);
+            }
+          }
+        }
+      }
+    }
+    return matchedDays.sort();
+  }, [globalClass, formData.subject, subjectList]);
+
+  const getDatesForWeekdayInMonth = useCallback((year, monthIndex, weekdayIndex) => {
+    const dates = [];
+    const date = new Date(year, monthIndex, 1);
+    while (date.getDay() !== weekdayIndex) {
+      date.setDate(date.getDate() + 1);
+    }
+    while (date.getMonth() === monthIndex) {
+      dates.push(date.toISOString().split('T')[0]);
+      date.setDate(date.getDate() + 7);
+    }
+    return dates;
+  }, []);
+
+  const activeGridDates = useMemo(() => {
+    if (globalClass === 'all' || !formData.subject) return [];
+    
+    const targetDays = teachingDays.length > 0 ? teachingDays : [1, 2, 3, 4, 5];
+    
+    let dates = [];
+    targetDays.forEach(dayIdx => {
+      const dayDates = getDatesForWeekdayInMonth(activeYear, activeMonthIndex, dayIdx);
+      dates = dates.concat(dayDates);
+    });
+    
+    dates.sort((a, b) => new Date(a) - new Date(b));
+    return dates;
+  }, [teachingDays, activeYear, activeMonthIndex, globalClass, formData.subject, getDatesForWeekdayInMonth]);
+
+  const currentKey = `${globalClass}|${formData.subject}|${activeYear}-${activeMonthIndex}`;
+
   // Active Class Students for Checklists
   const activeClassStudents = useMemo(() => {
     if (globalClass === 'all') return [];
@@ -652,27 +691,28 @@ export default function ClassroomManager() {
     return normalizedAssignmentHistory.filter(r => r.className === globalClass);
   }, [normalizedAssignmentHistory, globalClass]);
 
-  // Options for past attendance (grouped by week)
+  // Options for past attendance (grouped by month)
   const pastAttendanceOptions = useMemo(() => {
     const options = [];
     const seen = new Set();
     filteredAttendanceHistory.forEach(record => {
-      if (record.date === '-' || record.subject === '-') return;
-      const monday = getMonday(new Date(record.date));
-      const mStr = monday.toISOString().split('T')[0];
-      const key = `${mStr}|${record.subject}`;
+      if (!record.date || record.date === '-' || record.subject === '-') return;
+      const dateObj = new Date(record.date);
+      if (isNaN(dateObj.getTime())) return;
+      const monthStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-01`;
+      const key = `${monthStr}|${record.subject}`;
       if (!seen.has(key)) {
         seen.add(key);
-        options.push({ mondayStr: mStr, subject: record.subject });
+        options.push({ monthStr, subject: record.subject });
       }
     });
-    return options.sort((a, b) => new Date(b.mondayStr) - new Date(a.mondayStr));
+    return options.sort((a, b) => new Date(b.monthStr) - new Date(a.monthStr));
   }, [filteredAttendanceHistory]);
 
-  // Load weekly attendance when currentKey or history changes
+  // Load monthly attendance when currentKey or history changes
   useEffect(() => {
     let timerId;
-    if (globalClass === 'all' || !formData.subject || !mondayStr) {
+    if (globalClass === 'all' || !formData.subject || !selectedDate) {
       timerId = setTimeout(() => {
         setWeeklyAttendance({});
         setLoadedKey('');
@@ -681,7 +721,7 @@ export default function ClassroomManager() {
       const newWeeklyAtt = {};
       activeClassStudents.forEach(student => {
         newWeeklyAtt[student.name] = {};
-        weekdays.forEach(dateStr => {
+        activeGridDates.forEach(dateStr => {
           const record = filteredAttendanceHistory.find(r => 
             r.name === student.name && 
             r.subject === formData.subject && 
@@ -698,7 +738,8 @@ export default function ClassroomManager() {
     return () => {
       if (timerId) clearTimeout(timerId);
     };
-  }, [currentKey, activeClassStudents, weekdays, filteredAttendanceHistory, loadedKey, globalClass, formData.subject, mondayStr]);
+  }, [currentKey, activeClassStudents, activeGridDates, filteredAttendanceHistory, loadedKey, globalClass, formData.subject, selectedDate]);
+
 
   // Options for past assignments
   const pastAssignmentOptions = useMemo(() => {
@@ -811,7 +852,7 @@ export default function ClassroomManager() {
       
       const payloadData = [];
       validStudents.forEach(student => {
-        weekdays.forEach(dateStr => {
+        activeGridDates.forEach(dateStr => {
           const status = getAttendanceStatus(student.name, dateStr);
           payloadData.push(createAttendancePayloadRow({
             student,
@@ -828,7 +869,7 @@ export default function ClassroomManager() {
         return alert('❌ ไม่พบรายชื่อนักเรียนที่จะบันทึก (โปรดเลือกห้องเรียนและวิชา)');
       }
 
-      const confirmMsg = `ยืนยันบันทึกข้อมูลการเช็คชื่อเข้าเรียน\nห้อง: ${globalClass}\nวิชา: ${formData.subject}\nสัปดาห์วันที่: ${formatThaiDate(mondayStr)} - ${formatThaiDate(weekdays[4])}\nจำนวนนักเรียน: ${validStudents.length} คน (รวม ${payloadData.length} แถว)\n\nต้องการดำเนินการต่อหรือไม่?`;
+      const confirmMsg = `ยืนยันบันทึกข้อมูลการเช็คชื่อเข้าเรียน\nห้อง: ${globalClass}\nวิชา: ${formData.subject}\nประจำเดือน: ${thaiMonthName(activeMonthIndex)} ${activeYear + 543} (จำนวน ${activeGridDates.length} วันสอน)\nจำนวนนักเรียน: ${validStudents.length} คน (รวมทั้งหมด ${payloadData.length} แถว)\n\nต้องการดำเนินการต่อหรือไม่?`;
       
       if (!window.confirm(confirmMsg)) {
         setIsSaving(false);
@@ -1254,12 +1295,12 @@ export default function ClassroomManager() {
                     <div className="glass-card rounded-[2rem] p-6 flex flex-col gap-4 shadow-sm mb-8 animate-fade-in-up">
                       {pastAttendanceOptions.length > 0 && (
                         <div className="w-full pb-4 border-b border-slate-100">
-                          <label className="block text-xs font-semibold text-indigo-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Edit3 size={14}/> เลือกสัปดาห์เดิมเพื่อแก้ไข</label>
+                          <label className="block text-xs font-semibold text-indigo-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Edit3 size={14}/> เลือกเดือนเดิมเพื่อแก้ไข</label>
                           <select onChange={(e) => handleLoadPastAttendance(e.target.value)} className="w-full px-4 py-3 bg-indigo-50/50 border border-indigo-100 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-medium text-indigo-700 cursor-pointer transition-colors hover:bg-indigo-50">
-                            <option value="">-- สร้างการเช็คชื่อสัปดาห์ใหม่ --</option>
+                            <option value="">-- สร้างการเช็คชื่อเดือนใหม่ --</option>
                             {pastAttendanceOptions.map((opt, i) => (
-                              <option key={i} value={`${opt.mondayStr}|${opt.subject}`}>
-                                สัปดาห์วันที่ {formatThaiDate(opt.mondayStr)} - วิชา {opt.subject}
+                              <option key={i} value={`${opt.monthStr}|${opt.subject}`}>
+                                ประจำเดือน {thaiMonthName(new Date(opt.monthStr).getMonth())} {new Date(opt.monthStr).getFullYear() + 543} - วิชา {opt.subject}
                               </option>
                             ))}
                           </select>
@@ -1300,8 +1341,12 @@ export default function ClassroomManager() {
                         <div className="p-6 md:p-8 border-b border-slate-100/50 bg-white/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                           <div>
                             <h2 className="text-xl font-bold text-slate-800">เช็คชื่อเข้าเรียนห้อง {globalClass}</h2>
-                            <p className="text-xs font-semibold text-slate-500 mt-1">
-                              ประจำสัปดาห์: {formatThaiDate(mondayStr)} ถึง {formatThaiDate(weekdays[4])}
+                            <p className="text-xs font-bold text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
+                              <span>📅 ประจำเดือน:</span>
+                              <span className="text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded font-extrabold">{thaiMonthName(activeMonthIndex)} {activeYear + 543}</span>
+                              <span className="text-slate-300">|</span>
+                              <span>จำนวนวันเรียนทั้งหมด:</span>
+                              <span className="text-slate-700 font-extrabold">{activeGridDates.length} วันทำการ</span>
                             </p>
                           </div>
                           
@@ -1317,8 +1362,8 @@ export default function ClassroomManager() {
                               <button onClick={exportAttendanceExcel} className="bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl hover:bg-emerald-100 font-bold text-sm shadow-sm border border-emerald-100 flex items-center gap-2 transition-all">
                                 <Download size={18} /> ส่งออก Excel
                               </button>
-                              <button onClick={handleSaveBulkAttendance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl hover:bg-indigo-700 font-medium flex items-center gap-2">
-                                <Save size={18} /> บันทึกสัปดาห์นี้
+                              <button onClick={handleSaveBulkAttendance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl hover:bg-indigo-700 font-bold flex items-center gap-2 shadow-sm transition-all hover:scale-[1.02]">
+                                <Save size={18} /> บันทึกเดือนนี้
                               </button>
                             </div>
                           </div>
@@ -1331,47 +1376,39 @@ export default function ClassroomManager() {
                                 <th className="px-6 py-4 font-bold">ชื่อ</th>
                                 <th className="px-6 py-4 font-bold">นามสกุล</th>
                                 
-                                <th className="px-4 py-4 text-center bg-yellow-100/60 text-yellow-800 border-b border-yellow-200 min-w-[120px]">
-                                  <div className="flex flex-col items-center gap-1">
-                                    <span>จ</span>
-                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[0])}</span>
-                                    <button onClick={() => handleMarkAllDayPresent(weekdays[0])} className="mt-1 px-2 py-0.5 bg-yellow-50 text-yellow-700 hover:bg-yellow-200 border border-yellow-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
-                                  </div>
-                                </th>
+                                {activeGridDates.map((dateStr, dIdx) => {
+                                  const dateObj = new Date(dateStr);
+                                  const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+                                  const dayName = dayNames[dateObj.getDay()];
+                                  
+                                  const dayColors = {
+                                    0: 'bg-rose-100/60 text-rose-800 border-b border-rose-200',      // Sunday
+                                    1: 'bg-yellow-100/60 text-yellow-800 border-b border-yellow-200', // Monday
+                                    2: 'bg-pink-100/60 text-pink-800 border-b border-pink-200',     // Tuesday
+                                    3: 'bg-emerald-100/60 text-emerald-800 border-b border-emerald-200', // Wednesday
+                                    4: 'bg-purple-100/60 text-purple-800 border-b border-purple-200', // Thursday
+                                    5: 'bg-cyan-100/60 text-cyan-800 border-b border-cyan-200',     // Friday
+                                    6: 'bg-slate-100/60 text-slate-800 border-b border-slate-200',   // Saturday
+                                  };
+                                  const colorClass = dayColors[dateObj.getDay()] || 'bg-slate-100/60 text-slate-800 border-b border-slate-200';
+                                  
+                                  return (
+                                    <th key={dIdx} className={`px-4 py-4 text-center min-w-[120px] ${colorClass}`}>
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className="font-extrabold text-sm">{dayName}</span>
+                                        <span className="text-[10px] opacity-75 font-semibold">{formatHeaderDate(dateStr)}</span>
+                                        <button 
+                                          onClick={() => handleMarkAllDayPresent(dateStr)} 
+                                          className="mt-1 px-2 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-[10px] font-bold transition-all shadow-3xs"
+                                        >
+                                          มาทุกคน
+                                        </button>
+                                      </div>
+                                    </th>
+                                  );
+                                })}
                                 
-                                <th className="px-4 py-4 text-center bg-pink-100/60 text-pink-800 border-b border-pink-200 min-w-[120px]">
-                                  <div className="flex flex-col items-center gap-1">
-                                    <span>อ</span>
-                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[1])}</span>
-                                    <button onClick={() => handleMarkAllDayPresent(weekdays[1])} className="mt-1 px-2 py-0.5 bg-pink-50 text-pink-700 hover:bg-pink-200 border border-pink-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
-                                  </div>
-                                </th>
-                                
-                                <th className="px-4 py-4 text-center bg-emerald-100/60 text-emerald-800 border-b border-emerald-200 min-w-[120px]">
-                                  <div className="flex flex-col items-center gap-1">
-                                    <span>พ</span>
-                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[2])}</span>
-                                    <button onClick={() => handleMarkAllDayPresent(weekdays[2])} className="mt-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-200 border border-emerald-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
-                                  </div>
-                                </th>
-                                
-                                <th className="px-4 py-4 text-center bg-purple-100/60 text-purple-800 border-b border-purple-200 min-w-[120px]">
-                                  <div className="flex flex-col items-center gap-1">
-                                    <span>พฤ</span>
-                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[3])}</span>
-                                    <button onClick={() => handleMarkAllDayPresent(weekdays[3])} className="mt-1 px-2 py-0.5 bg-purple-50 text-purple-700 hover:bg-purple-200 border border-purple-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
-                                  </div>
-                                </th>
-                                
-                                <th className="px-4 py-4 text-center bg-cyan-100/60 text-cyan-800 border-b border-cyan-200 min-w-[120px]">
-                                  <div className="flex flex-col items-center gap-1">
-                                    <span>ศ</span>
-                                    <span className="text-[10px] opacity-75">{formatHeaderDate(weekdays[4])}</span>
-                                    <button onClick={() => handleMarkAllDayPresent(weekdays[4])} className="mt-1 px-2 py-0.5 bg-cyan-50 text-cyan-700 hover:bg-cyan-200 border border-cyan-300 rounded text-[10px] font-bold transition-all shadow-2xs">มาทุกคน</button>
-                                  </div>
-                                </th>
-                                
-                                <th className="px-6 py-4 text-center bg-amber-200 text-amber-900 border-b border-amber-300 font-bold min-w-[80px]">รวม</th>
+                                <th className="px-6 py-4 text-center bg-amber-200 text-amber-900 border-b border-amber-300 font-bold min-w-[80px]">รวม ({activeGridDates.length} วัน)</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100/50">
@@ -1379,7 +1416,7 @@ export default function ClassroomManager() {
                                 const { firstName, lastName } = splitName(student.name);
                                 
                                 let totalPresent = 0;
-                                weekdays.forEach(dateStr => {
+                                activeGridDates.forEach(dateStr => {
                                   const status = getAttendanceStatus(student.name, dateStr);
                                   if (status === 'present' || status === 'late') {
                                     totalPresent += 1;
@@ -1391,7 +1428,7 @@ export default function ClassroomManager() {
                                     <td className="px-6 py-4 text-sm text-slate-500 font-semibold">{student.studentId}</td>
                                     <td className="px-6 py-4 text-sm font-semibold text-slate-700">{firstName}</td>
                                     <td className="px-6 py-4 text-sm font-semibold text-slate-700">{lastName}</td>
-                                    {weekdays.map((dateStr, dIdx) => {
+                                    {activeGridDates.map((dateStr, dIdx) => {
                                       const status = getAttendanceStatus(student.name, dateStr);
                                       return (
                                         <td key={dIdx} className="px-4 py-4 text-center">
