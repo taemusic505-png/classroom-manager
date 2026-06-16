@@ -1439,7 +1439,17 @@ export default function ClassroomManager() {
                       {pastAttendanceOptions.length > 0 && (
                         <div className="w-full pb-4 border-b border-slate-100">
                           <label className="block text-xs font-semibold text-indigo-500 mb-2 uppercase tracking-wider flex items-center gap-1"><Edit3 size={14}/> เลือกเดือนเดิมเพื่อแก้ไข</label>
-                          <select onChange={(e) => handleLoadPastAttendance(e.target.value)} className="w-full px-4 py-3 bg-indigo-50/50 border border-indigo-100 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-medium text-indigo-700 cursor-pointer transition-colors hover:bg-indigo-50">
+                          <select 
+                            value={(() => {
+                              if (!formData.subject) return "";
+                              const currentMonthStr = `${activeYear}-${String(activeMonthIndex + 1).padStart(2, '0')}-01`;
+                              const expectedSelectValue = `${currentMonthStr}|${formData.subject}`;
+                              const isPastAttendanceExists = pastAttendanceOptions.some(opt => `${opt.monthStr}|${opt.subject}` === expectedSelectValue);
+                              return isPastAttendanceExists ? expectedSelectValue : "";
+                            })()}
+                            onChange={(e) => handleLoadPastAttendance(e.target.value)} 
+                            className="w-full px-4 py-3 bg-indigo-50/50 border border-indigo-100 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-medium text-indigo-700 cursor-pointer transition-colors hover:bg-indigo-50"
+                          >
                             <option value="">-- สร้างการเช็คชื่อเดือนใหม่ --</option>
                             {pastAttendanceOptions.map((opt, i) => (
                               <option key={i} value={`${opt.monthStr}|${opt.subject}`}>
