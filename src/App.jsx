@@ -85,8 +85,8 @@ const thaiMonthName = (monthIdx) => {
 const formatHeaderDate = (dateStr) => {
   if (!dateStr || dateStr === '-') return '';
   const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-  const d = new Date(dateStr);
-  return `${d.getDate()} ${months[d.getMonth()]}`;
+  const [, m, d] = dateStr.split('-').map(Number); // local time — ไม่ใช้ new Date(str) ที่ parse เป็น UTC
+  return `${d} ${months[m - 1]}`;
 };
 
 const splitName = (fullName) => {
@@ -96,6 +96,28 @@ const splitName = (fullName) => {
   const firstName = parts[0] || '-';
   const lastName = parts.slice(1).join(' ') || '-';
   return { firstName, lastName };
+};
+
+// ===== Cross-Class Subject Configuration =====
+// Classes automatically included for ลูกเสือ
+const SCOUT_CLASSES = ['ป.4', 'ป.5', 'ป.6', 'ม.1', 'ม.2', 'ม.3'];
+
+// Keywords in subject name that indicate a cross-class (all-class) subject
+const CROSS_CLASS_KEYWORDS = ['ชุมนุม', 'ลูกเสือ'];
+
+const isCrossClassSubject = (subjectName) => {
+  if (!subjectName) return false;
+  return CROSS_CLASS_KEYWORDS.some(kw => subjectName.includes(kw));
+};
+
+const isScoutSubject = (subjectName) => {
+  if (!subjectName) return false;
+  return subjectName.includes('ลูกเสือ');
+};
+
+const isClubSubject = (subjectName) => {
+  if (!subjectName) return false;
+  return subjectName.includes('ชุมนุม');
 };
 
 const DecorativeBackground = () => (
@@ -404,6 +426,10 @@ export default function ClassroomManager() {
   const [timetableAlert, setTimetableAlert] = useState({ isOpen: false, subject: '', className: '' });
   const [excludedDates, setExcludedDates] = useState([]);
 
+  // ---------------- CROSS-CLASS SUBJECT STATES (ชุมนุม / ลูกเสือ) ----------------
+  const [selectedCrossStudents, setSelectedCrossStudents] = useState(new Set()); // Names selected for ชุมนุม
+  const [showStudentPicker, setShowStudentPicker] = useState(false); // Show/hide student picker panel
+
   const toggleDateExclusion = useCallback((dateStr) => {
     setExcludedDates(prev => {
       if (prev.includes(dateStr)) {
@@ -556,11 +582,20 @@ export default function ClassroomManager() {
 
   const filteredSubjectList = useMemo(() => {
     if (globalClass === 'all') return subjectList;
-    return subjectList.filter(sub => {
+    
+    // For a specific class, get matching subjects from the sheet
+    const classSpecific = subjectList.filter(sub => {
       if (sub.includes(globalClass)) return true;
       const hasOtherClass = classList.some(c => c !== globalClass && sub.includes(c));
       return !hasOtherClass;
     });
+    
+    // Also include cross-class subjects (ชุมนุม, ลูกเสือ) from the sheet that don't have a specific class
+    const crossClassFromSheet = subjectList.filter(sub => isCrossClassSubject(sub));
+    
+    // Merge without duplicates
+    const merged = [...new Set([...classSpecific, ...crossClassFromSheet])];
+    return merged;
   }, [subjectList, globalClass, classList]);
 
   const handleTimetableCellClick = useCallback((dayName, slotInfo) => {
@@ -613,16 +648,33 @@ export default function ClassroomManager() {
   }, [selectedDate]);
 
   const teachingDays = useMemo(() => {
-    if (globalClass === 'all' || !formData.subject) return [];
+    if (!formData.subject) return [];
     
     const dayNames = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
     const matchedDays = [];
+    const isCross = isCrossClassSubject(formData.subject);
+    
+    if (!isCross && globalClass === 'all') return [];
     
     for (const [dayName, daySchedule] of Object.entries(SCHEDULE)) {
       for (const slot of Object.values(daySchedule)) {
-        if (slot.class === globalClass) {
-          const resolved = resolveSubjectFromTimetable(slot.subject, slot.class, subjectList);
-          if (resolved === formData.subject) {
+        // For cross-class subjects: match slots where class='all'
+        // For normal subjects: match slots where class=globalClass
+        const classMatch = isCross ? (slot.class === 'all') : (slot.class === globalClass);
+        if (!classMatch) continue;
+        
+        const resolved = resolveSubjectFromTimetable(slot.subject, slot.class, subjectList);
+        if (resolved === formData.subject) {
+          const dayIdx = dayNames.indexOf(dayName);
+          if (dayIdx !== -1 && !matchedDays.includes(dayIdx)) {
+            matchedDays.push(dayIdx);
+          }
+        }
+        
+        // For cross-class: also match by keyword if no exact resolve found
+        if (isCross && !resolved) {
+          const subjectKeyword = CROSS_CLASS_KEYWORDS.find(kw => formData.subject.includes(kw));
+          if (subjectKeyword && slot.subject.includes(subjectKeyword)) {
             const dayIdx = dayNames.indexOf(dayName);
             if (dayIdx !== -1 && !matchedDays.includes(dayIdx)) {
               matchedDays.push(dayIdx);
@@ -648,7 +700,9 @@ export default function ClassroomManager() {
   }, []);
 
   const activeGridDates = useMemo(() => {
-    if (globalClass === 'all' || !formData.subject) return [];
+    if (!formData.subject) return [];
+    const isCross = isCrossClassSubject(formData.subject);
+    if (!isCross && globalClass === 'all') return [];
     
     const targetDays = teachingDays.length > 0 ? teachingDays : [1, 2, 3, 4, 5];
     
@@ -666,9 +720,23 @@ export default function ClassroomManager() {
 
   // Active Class Students for Checklists
   const activeClassStudents = useMemo(() => {
+    const subject = formData.subject;
+    
+    // ลูกเสือ: auto-load ป.4-ม.3 all students
+    if (isScoutSubject(subject)) {
+      return normalizedStudents.filter(s => SCOUT_CLASSES.includes(s.className));
+    }
+    
+    // ชุมนุม: use teacher-selected students
+    if (isClubSubject(subject)) {
+      if (selectedCrossStudents.size === 0) return [];
+      return normalizedStudents.filter(s => selectedCrossStudents.has(s.name));
+    }
+    
+    // Normal class subject
     if (globalClass === 'all') return [];
     return normalizedStudents.filter(s => s.className === globalClass);
-  }, [normalizedStudents, globalClass]);
+  }, [normalizedStudents, globalClass, formData.subject, selectedCrossStudents]);
 
   // Students list for Summary Dropdown
   const summaryStudentList = useMemo(() => {
@@ -695,6 +763,9 @@ export default function ClassroomManager() {
     setFormData(prev => ({ ...prev, subject: '' }));
     setAssignForm(prev => ({ ...prev, subject: '' }));
     setLoadedKey(''); // Force reload weekly attendance
+    // Reset cross-class selections
+    setSelectedCrossStudents(new Set());
+    setShowStudentPicker(false);
   };
 
   const getAttendanceStatus = (name, date) => weeklyAttendance[name]?.[date] || 'present';
@@ -748,18 +819,24 @@ export default function ClassroomManager() {
   // Load monthly attendance when currentKey or history changes
   useEffect(() => {
     let timerId;
-    if (globalClass === 'all' || !formData.subject || !selectedDate) {
+    const isCross = isCrossClassSubject(formData.subject);
+    const shouldReset = (!isCross && globalClass === 'all') || !formData.subject || !selectedDate;
+    
+    if (shouldReset) {
       timerId = setTimeout(() => {
         setWeeklyAttendance({});
         setExcludedDates([]);
         setLoadedKey('');
       }, 0);
     } else if (loadedKey !== currentKey) {
+      // For cross-class subjects (ชุมนุม/ลูกเสือ), use full attendance history
+      const attHistory = isCross ? normalizedAttendanceHistory : filteredAttendanceHistory;
+      
       const newWeeklyAtt = {};
       activeClassStudents.forEach(student => {
         newWeeklyAtt[student.name] = {};
         activeGridDates.forEach(dateStr => {
-          const record = filteredAttendanceHistory.find(r => 
+          const record = attHistory.find(r => 
             r.name === student.name && 
             r.subject === formData.subject && 
             r.date === dateStr
@@ -769,7 +846,7 @@ export default function ClassroomManager() {
       });
 
       // Check if there are any saved records for this subject in the active grid dates
-      const hasAnySavedRecords = filteredAttendanceHistory.some(r => 
+      const hasAnySavedRecords = attHistory.some(r => 
         r.subject === formData.subject && 
         activeGridDates.includes(r.date)
       );
@@ -777,7 +854,7 @@ export default function ClassroomManager() {
       let initialExcluded = [];
       if (hasAnySavedRecords) {
         initialExcluded = activeGridDates.filter(dateStr => 
-          !filteredAttendanceHistory.some(r => 
+          !attHistory.some(r => 
             r.subject === formData.subject && 
             r.date === dateStr
           )
@@ -793,7 +870,7 @@ export default function ClassroomManager() {
     return () => {
       if (timerId) clearTimeout(timerId);
     };
-  }, [currentKey, activeClassStudents, activeGridDates, filteredAttendanceHistory, loadedKey, globalClass, formData.subject, selectedDate]);
+  }, [currentKey, activeClassStudents, activeGridDates, filteredAttendanceHistory, normalizedAttendanceHistory, loadedKey, globalClass, formData.subject, selectedDate]);
 
 
   // Options for past assignments
@@ -885,8 +962,12 @@ export default function ClassroomManager() {
 
   const handleSaveBulkAttendance = async (e) => {
     e.preventDefault();
-    if (globalClass === 'all') return alert('กรุณาเลือกชั้นเรียนก่อน');
+    const isCross = isCrossClassSubject(formData.subject);
+    if (!isCross && globalClass === 'all') return alert('กรุณาเลือกชั้นเรียนก่อน');
     if (!formData.subject) return alert('กรุณาเลือกวิชาก่อนบันทึก');
+    if (isClubSubject(formData.subject) && selectedCrossStudents.size === 0) {
+      return alert('กรุณาเลือกรายชื่อนักเรียนชุมนุมก่อนบันทึก (คลิกปุ่ม "เลือกรายชื่อนักเรียน")');
+    }
     
     const scriptUrl = import.meta.env.VITE_GOOGLE_APP_SCRIPT_URL;
     
@@ -1334,7 +1415,7 @@ export default function ClassroomManager() {
                   ))}
                 </div>
 
-                {globalClass === 'all' ? (
+                {globalClass === 'all' && !formData.subject ? (
                   <div className="space-y-8">
                     <div className="glass-card rounded-[2rem] p-4 text-center flex flex-col items-center justify-center border-dashed border-2 border-indigo-200/50 bg-indigo-50/20 animate-fade-in-up">
                       <Users size={32} className="text-indigo-500 mb-2" />
@@ -1381,76 +1462,111 @@ export default function ClassroomManager() {
                     </div>
 
                     {!formData.subject ? (
+                      /* No subject selected — show prompt + timetable */
                       <div className="space-y-8 animate-fade-in-up">
                         <div className="glass-card rounded-[2rem] p-4 text-center flex flex-col items-center justify-center border-dashed border-2 border-indigo-200/50 bg-indigo-50/20">
                           <BookOpen size={32} className="text-indigo-500 mb-2 animate-pulse" />
                           <h3 className="text-md font-bold text-indigo-900">กรุณาเลือกวิชาในกล่องด้านบน หรือคลิกจากตารางเรียนด้านล่าง</h3>
                           <p className="text-xs text-indigo-700/70 mt-0.5">คลิกเพื่อคำนวณวันและรายวิชาที่สัมพันธ์ให้อัตโนมัติ</p>
                         </div>
-                        <TimetableGrid 
-                          subjectList={subjectList}
-                          onCellClick={handleTimetableCellClick}
-                        />
+                        <TimetableGrid subjectList={subjectList} onCellClick={handleTimetableCellClick} />
+                      </div>
+                    ) : isClubSubject(formData.subject) && activeClassStudents.length === 0 ? (
+                      /* ชุมนุม — needs student selection first */
+                      <div className="glass-card rounded-[2rem] p-10 flex flex-col items-center justify-center gap-5 border-2 border-dashed border-orange-200 bg-orange-50/30 animate-fade-in-up">
+                        <div className="w-16 h-16 rounded-2xl bg-orange-100 flex items-center justify-center text-orange-600"><Users size={32} /></div>
+                        <div className="text-center">
+                          <h3 className="text-lg font-bold text-orange-900">กิจกรรมชุมนุม — เลือกรายชื่อนักเรียน</h3>
+                          <p className="text-sm text-orange-700 mt-1">นักเรียนชุมนุมมาจากหลายห้อง กรุณาเลือกรายชื่อนักเรียนที่เข้าร่วม</p>
+                        </div>
+                        <button type="button" onClick={() => setShowStudentPicker(true)} className="bg-orange-500 text-white px-8 py-3 rounded-xl font-bold text-sm hover:bg-orange-600 transition-all shadow-lg shadow-orange-200 flex items-center gap-2 hover:scale-[1.02]">
+                          <Users size={18} /> เลือกรายชื่อนักเรียน
+                        </button>
                       </div>
                     ) : activeClassStudents.length > 0 && (
-                      <div className="glass-card rounded-[2rem] overflow-hidden shadow-lg shadow-slate-200/50">
-                        <div className="p-6 md:p-8 border-b border-slate-100/50 bg-white/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                          <div>
-                            <h2 className="text-xl font-bold text-slate-800">เช็คชื่อเข้าเรียนห้อง {globalClass}</h2>
-                            <p className="text-xs font-bold text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
-                              <span>📅 ประจำเดือน:</span>
-                              <span className="text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded font-extrabold">{thaiMonthName(activeMonthIndex)} {activeYear + 543}</span>
-                              <span className="text-slate-300">|</span>
-                              <span>จำนวนวันเรียนทั้งหมด:</span>
-                              <span className="text-slate-700 font-extrabold">{activeGridDates.filter(d => !excludedDates.includes(d)).length} วันทำการ</span>
-                            </p>
-                          </div>
-                          
-                          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
-                            <div className="flex gap-2 items-center bg-white/60 px-3 py-1.5 rounded-xl border border-slate-100 text-xs text-slate-500 shadow-sm">
-                              <span className="font-semibold text-slate-600">คำอธิบาย:</span>
-                              <span className="flex items-center gap-1"><span className="w-4.5 h-4.5 rounded-md bg-emerald-500 inline-flex items-center justify-center text-white text-[10px] font-bold">✓</span> มา</span>
-                              <span className="flex items-center gap-1"><span className="w-4.5 h-4.5 rounded-md bg-rose-500 inline-flex items-center justify-center text-white text-[10px] font-bold">✗</span> ขาด</span>
-                              <span className="flex items-center gap-1"><span className="w-4.5 h-4.5 rounded-md bg-amber-500 inline-flex items-center justify-center text-white text-[10px] font-bold">⏰</span> สาย</span>
-                            </div>
-                            
-                            <div className="flex gap-2">
-                              <button onClick={exportAttendanceExcel} className="bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl hover:bg-emerald-100 font-bold text-sm shadow-sm border border-emerald-100 flex items-center gap-2 transition-all">
-                                <Download size={18} /> ส่งออก Excel
-                              </button>
-                              <button onClick={handleSaveBulkAttendance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl hover:bg-indigo-700 font-bold flex items-center gap-2 shadow-sm transition-all hover:scale-[1.02]">
-                                <Save size={18} /> บันทึกเดือนนี้
-                              </button>
+                      /* Normal class, ลูกเสือ, or ชุมนุม with selected students — show attendance table */
+                      <div className="space-y-4 animate-fade-in-up">
+                        {/* Cross-class info banners */}
+                        {isScoutSubject(formData.subject) && (
+                          <div className="glass-card rounded-2xl px-6 py-4 flex items-center gap-4 bg-emerald-50/50 border border-emerald-200">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0"><Users size={20} /></div>
+                            <div className="flex-1">
+                              <p className="font-bold text-emerald-800 text-sm">🪖 ลูกเสือ — โหลดรายชื่ออัตโนมัติ</p>
+                              <p className="text-xs text-emerald-700">นักเรียนชั้น ป.4 - ม.3 ทั้งหมด {activeClassStudents.length} คน ({SCOUT_CLASSES.join(', ')})</p>
                             </div>
                           </div>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse">
-                            <thead>
-                              <tr className="bg-slate-50/50 text-xs uppercase tracking-wider text-slate-400">
-                                <th className="px-6 py-4 font-bold">เลขที่</th>
-                                <th className="px-6 py-4 font-bold">ชื่อ</th>
-                                <th className="px-6 py-4 font-bold">นามสกุล</th>
-                                
-                                {activeGridDates.map((dateStr, dIdx) => {
-                                  const dateObj = new Date(dateStr);
-                                  const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-                                  const dayName = dayNames[dateObj.getDay()];
-                                  const isExcluded = excludedDates.includes(dateStr);
+                        )}
+                        {isClubSubject(formData.subject) && (
+                          <div className="glass-card rounded-2xl px-6 py-4 flex items-center gap-4 bg-orange-50/50 border border-orange-200">
+                            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600 shrink-0"><Users size={20} /></div>
+                            <div className="flex-1">
+                              <p className="font-bold text-orange-800 text-sm">🎯 ชุมนุม — รายชื่อที่เลือก</p>
+                              <p className="text-xs text-orange-700">{activeClassStudents.length} คนที่เลือก</p>
+                            </div>
+                            <button type="button" onClick={() => setShowStudentPicker(true)} className="px-4 py-2 bg-orange-100 text-orange-700 border border-orange-200 rounded-xl text-xs font-bold hover:bg-orange-200 transition-all">แก้ไขรายชื่อ</button>
+                          </div>
+                        )}
+
+                        {/* Attendance table card */}
+                        <div className="glass-card rounded-[2rem] overflow-hidden shadow-lg shadow-slate-200/50">
+                          <div className="p-6 md:p-8 border-b border-slate-100/50 bg-white/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div>
+                              <h2 className="text-xl font-bold text-slate-800">
+                                {isCrossClassSubject(formData.subject) ? `เช็คชื่อ — ${formData.subject}` : `เช็คชื่อเข้าเรียนห้อง ${globalClass}`}
+                              </h2>
+                              <p className="text-xs font-bold text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
+                                <span>📅 ประจำเดือน:</span>
+                                <span className="text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded font-extrabold">{thaiMonthName(activeMonthIndex)} {activeYear + 543}</span>
+                                <span className="text-slate-300">|</span>
+                                <span>จำนวนวันเรียนทั้งหมด:</span>
+                                <span className="text-slate-700 font-extrabold">{activeGridDates.filter(d => !excludedDates.includes(d)).length} วันทำการ</span>
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+                              <div className="flex gap-2 items-center bg-white/60 px-3 py-1.5 rounded-xl border border-slate-100 text-xs text-slate-500 shadow-sm">
+                                <span className="font-semibold text-slate-600">คำอธิบาย:</span>
+                                <span className="flex items-center gap-1"><span className="w-4.5 h-4.5 rounded-md bg-emerald-500 inline-flex items-center justify-center text-white text-[10px] font-bold">✓</span> มา</span>
+                                <span className="flex items-center gap-1"><span className="w-4.5 h-4.5 rounded-md bg-rose-500 inline-flex items-center justify-center text-white text-[10px] font-bold">✗</span> ขาด</span>
+                                <span className="flex items-center gap-1"><span className="w-4.5 h-4.5 rounded-md bg-amber-500 inline-flex items-center justify-center text-white text-[10px] font-bold">⏰</span> สาย</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={exportAttendanceExcel} className="bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl hover:bg-emerald-100 font-bold text-sm shadow-sm border border-emerald-100 flex items-center gap-2 transition-all">
+                                  <Download size={18} /> ส่งออก Excel
+                                </button>
+                                <button onClick={handleSaveBulkAttendance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl hover:bg-indigo-700 font-bold flex items-center gap-2 shadow-sm transition-all hover:scale-[1.02]">
+                                  <Save size={18} /> บันทึกเดือนนี้
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50/50 text-xs uppercase tracking-wider text-slate-400">
+                                  <th className="px-6 py-4 font-bold">เลขที่</th>
+                                  <th className="px-6 py-4 font-bold">ชื่อ</th>
+                                  <th className="px-6 py-4 font-bold">นามสกุล</th>
                                   
-                                  const dayColors = {
-                                    0: 'bg-rose-100/60 text-rose-800 border-b border-rose-200',      // Sunday
-                                    1: 'bg-yellow-100/60 text-yellow-800 border-b border-yellow-200', // Monday
-                                    2: 'bg-pink-100/60 text-pink-800 border-b border-pink-200',     // Tuesday
-                                    3: 'bg-emerald-100/60 text-emerald-800 border-b border-emerald-200', // Wednesday
-                                    4: 'bg-purple-100/60 text-purple-800 border-b border-purple-200', // Thursday
-                                    5: 'bg-cyan-100/60 text-cyan-800 border-b border-cyan-200',     // Friday
-                                    6: 'bg-slate-100/60 text-slate-800 border-b border-slate-200',   // Saturday
-                                  };
-                                  let colorClass = dayColors[dateObj.getDay()] || 'bg-slate-100/60 text-slate-800 border-b border-slate-200';
-                                  if (isExcluded) {
-                                    colorClass = 'bg-slate-100/30 text-slate-400 border-b border-slate-200/50';
-                                  }
+                                  {activeGridDates.map((dateStr, dIdx) => {
+                                    const [yr, mo, dy] = dateStr.split('-').map(Number);
+                                    const dateObj = new Date(yr, mo - 1, dy); // local time — ป้องกัน UTC offset ทำให้วันผิด
+                                    const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+                                    const dayName = dayNames[dateObj.getDay()];
+                                    const isExcluded = excludedDates.includes(dateStr);
+                                    
+                                    const dayColors = {
+                                      0: 'bg-rose-100/60 text-rose-800 border-b border-rose-200',      // อาทิตย์
+                                      1: 'bg-yellow-100/60 text-yellow-800 border-b border-yellow-200', // จันทร์
+                                      2: 'bg-pink-100/60 text-pink-800 border-b border-pink-200',       // อังคาร
+                                      3: 'bg-emerald-100/60 text-emerald-800 border-b border-emerald-200', // พุธ
+                                      4: 'bg-purple-100/60 text-purple-800 border-b border-purple-200', // พฤหัสบดี
+                                      5: 'bg-cyan-100/60 text-cyan-800 border-b border-cyan-200',       // ศุกร์
+                                      6: 'bg-slate-100/60 text-slate-800 border-b border-slate-200',    // เสาร์
+                                    };
+                                    let colorClass = dayColors[dateObj.getDay()] || 'bg-slate-100/60 text-slate-800 border-b border-slate-200';
+                                    if (isExcluded) {
+                                      colorClass = 'bg-slate-100/30 text-slate-400 border-b border-slate-200';
+                                    }
                                   
                                   return (
                                     <th key={dIdx} className={`px-4 py-3 text-center min-w-[120px] transition-all ${isExcluded ? 'opacity-40' : ''} ${colorClass}`}>
@@ -1547,6 +1663,7 @@ export default function ClassroomManager() {
                           </table>
                         </div>
                       </div>
+                       </div>
                     )}
                   </>
 
