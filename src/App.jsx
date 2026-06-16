@@ -713,6 +713,11 @@ export default function ClassroomManager() {
     });
     
     dates.sort((a, b) => new Date(a) - new Date(b));
+    
+    // กรองวันที่ในอนาคตออกเพื่อไม่ให้มีคอลัมน์ล่วงหน้าและป้องกันการบันทึกข้อมูลล่วงหน้า
+    const todayStr = toLocalDateString(new Date());
+    dates = dates.filter(d => d <= todayStr);
+    
     return dates;
   }, [teachingDays, activeYear, activeMonthIndex, globalClass, formData.subject, getDatesForWeekdayInMonth]);
 
