@@ -626,6 +626,7 @@ export default function ClassroomManager() {
     
     if (resolvedSub) {
       setFormData({ subject: resolvedSub });
+      setActiveTab('attendance');
     } else {
       setFormData({ subject: '' });
       setTimetableAlert({
